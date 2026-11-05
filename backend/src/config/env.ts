@@ -16,11 +16,17 @@ const envSchema = z.object({
   IMAGE_STORAGE_PATH: z.string().default(defaultStorage),
 });
 
-const parsed = envSchema.safeParse(process.env);
+let parsedEnv: z.infer<typeof envSchema>;
 
-if (!parsed.success) {
-  console.error('❌ Invalid environment configuration:', JSON.stringify(parsed.error.format(), null, 2));
+try {
+  parsedEnv = envSchema.parse(process.env);
+} catch (err: unknown) {
+  if (err instanceof z.ZodError) {
+    console.error('❌ Invalid environment configuration:', JSON.stringify(err.format(), null, 2));
+  } else {
+    console.error('❌ Invalid environment configuration:', err);
+  }
   process.exit(1);
 }
 
-export const env = parsed.data;
+export const env: z.infer<typeof envSchema> = parsedEnv;
