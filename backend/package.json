@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "FoodBill Pro Multi-Device Synchronized POS & Billing Backend API",
   "main": "dist/server.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
