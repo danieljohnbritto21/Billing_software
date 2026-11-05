@@ -8,13 +8,21 @@ import { logger } from './utils/logger';
 
 export const app = express();
 
+// Disable ETag generation to prevent HTTP 304 caching on dynamic sync and API endpoints
+app.set('etag', false);
+
 // Security Middlewares
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
 app.use(
   cors({
-    origin: '*', // Tailscale private network & local clients
+    origin: true, // Dynamically reflect caller origin (Flutter Web on Chrome localhost, mobile, etc.)
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Id', 'X-Idempotency-Key'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Id', 'X-Idempotency-Key', 'Accept', 'Cache-Control', 'Pragma'],
   })
 );
 
@@ -27,7 +35,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
   res.on('finish', () => {
     const duration = Date.now() - start;
-    logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} - ${duration}ms`);
+    const deviceId = req.headers['x-device-id'] || req.user?.deviceId || 'none';
+    logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} - ${duration}ms [device: ${deviceId}]`);
   });
   next();
 });
@@ -49,6 +58,17 @@ app.get('/health', async (req: Request, res: Response) => {
       error: err.message,
     });
   }
+});
+
+// Explicitly prevent caching on all /api/v1 endpoints
+app.use('/api/v1', (req: Request, res: Response, next: NextFunction) => {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Surrogate-Control': 'no-store',
+  });
+  next();
 });
 
 // API Routes

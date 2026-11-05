@@ -8,15 +8,15 @@ Enterprise Node.js & TypeScript REST API and synchronization service for FoodBil
 
 - **Runtime & Language:** Node.js (v20+ LTS), TypeScript 5.6
 - **Web Framework:** Express 4 with Helmet, CORS, and Zod validation
-- **Database & ORM:** PostgreSQL 16 on port 5433 with Prisma ORM 5.22
+- **Database & ORM:** PostgreSQL 16 with Prisma ORM 5.22
 - **Synchronization Engine:** Per-business transactional change log outbox (`sync_change_log`) with atomic row-locked contiguous commit-safe cursors (`business_sync_cursors`)
-- **Network Security:** Private Tailscale overlay network (port 5433 and API port 3000 are not exposed to the public internet)
+- **Cloud Hosting & Security:** Render Web Service with managed PostgreSQL over TLS/HTTPS (port 5433 is never exposed publicly)
 
 ---
 
 ## 2. Prerequisites & Environment Setup
 
-1. **PostgreSQL 16 Cluster:** Running on port `5433` inside WSL distribution `FoodBill-Ubuntu`.
+1. **PostgreSQL 16 Cluster:** Local development runs inside WSL distribution `FoodBill-Ubuntu` on port `5433`; production runs on Render Managed PostgreSQL.
 2. **Environment File (`.env`):**
    ```env
    PORT=3000
@@ -50,9 +50,15 @@ node node_modules/typescript/bin/tsc
 node dist/server.js
 ```
 
+### Render Deployment Configuration:
+- **Build Command:** `npm install && npm run build && npx prisma generate`
+- **Start Command:** `node dist/server.js`
+- **Health Check Path:** `/health`
+- **Environment Variables:** `DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `NODE_ENV=production`
+
 ### Run Automated Integration Test Suite:
 ```bash
-# Runs full integration tests (26 passing tests) against isolated test database:
+# Runs full integration tests (32 passing tests) against isolated test database:
 wsl -d FoodBill-Ubuntu bash -c "cd /mnt/d/billing_software/backend && DATABASE_URL='postgresql://foodbill_app:<PASSWORD>@127.0.0.1:5433/foodbill_api_test?schema=public' node node_modules/tsx/dist/cli.mjs --test tests/api.integration.test.ts"
 ```
 
@@ -95,8 +101,7 @@ wsl -d FoodBill-Ubuntu bash -c "cd /mnt/d/billing_software/backend && DATABASE_U
 - `GET /api/v1/payments` — Lists payments
 - `POST /api/v1/payments` — Cashier only: Records payment with idempotency key, updating invoice balance
 
-### Kitchen Order Tickets (KOT) (`/api/v1/kot`)
-- `GET /api/v1/kot` — Lists KOT records
+### Kitchen Order Tickets (KOT) (`/api/v1/kot`)\n- `GET /api/v1/kot` — Lists KOT records
 - `POST /api/v1/kot` — Cashier only: Generates immutable KOT snapshot
 - `POST /api/v1/kot/:id/reprint` — Cashier only: Increments reprint counter
 

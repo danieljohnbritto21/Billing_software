@@ -42,6 +42,7 @@ test('=== FOODBILL PRO PHASE 4 API INTEGRATION TEST SUITE ===', async (t) => {
   let admin1BusinessId: string;
   let cashierToken1: string;
   let cashier1UserId: string;
+  let cashier1Username: string;
 
   let adminToken2: string;
   let admin2BusinessId: string;
@@ -107,6 +108,7 @@ test('=== FOODBILL PRO PHASE 4 API INTEGRATION TEST SUITE ===', async (t) => {
       assert.equal(res.status, 201);
       assert.equal(res.data.data.role, 'cashier');
       cashier1UserId = res.data.data.id;
+      cashier1Username = cashierUsername;
 
       // Cashier logs in
       const loginRes = await apiRequest('/auth/login', {
@@ -294,6 +296,18 @@ test('=== FOODBILL PRO PHASE 4 API INTEGRATION TEST SUITE ===', async (t) => {
       );
       assert.equal(revokeRes.status, 200);
       assert.equal(revokeRes.data.data.is_authorized, false);
+
+      // Re-authorize so the terminal is active for subsequent cashier operations
+      const reauthRes = await apiRequest(
+        `/devices/${device1Id}/authorization`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ isAuthorized: true }),
+        },
+        adminToken1
+      );
+      assert.equal(reauthRes.status, 200);
+      assert.equal(reauthRes.data.data.is_authorized, true);
     });
   });
 
@@ -489,6 +503,228 @@ test('=== FOODBILL PRO PHASE 4 API INTEGRATION TEST SUITE ===', async (t) => {
       assert.equal(res.status, 200);
       assert.equal(res.data.data.results[0].status, 'conflict');
       assert.equal(res.data.data.results[0].resolution, 'SERVER_WINS');
+    });
+  });
+
+  await t.test('8. Device Authorization & Revocation Security Enforcement', async (t2) => {
+    let testDeviceId: string;
+    let testDeviceToken: string;
+
+    await t2.test('8.1 Authorized device can sync successfully', async () => {
+      const devUid = `pos-auth-${Date.now()}`;
+      const loginRes = await apiRequest('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: cashier1Username,
+          password: 'CashierPassword@123',
+          deviceUid: devUid,
+          deviceName: 'Authorized POS Terminal',
+        }),
+      });
+
+      assert.equal(loginRes.status, 200);
+      testDeviceToken = loginRes.data.data.token;
+      testDeviceId = loginRes.data.data.deviceId;
+      assert.ok(testDeviceId);
+
+      // Verify sync pull works for authorized device
+      const pullRes = await apiRequest('/sync/pull?cursor=0&limit=5', {}, testDeviceToken);
+      assert.equal(pullRes.status, 200);
+      assert.ok(Array.isArray(pullRes.data.data.changes));
+
+      // Verify sync push works for authorized device
+      const pushRes = await apiRequest(
+        '/sync/push',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            deviceId: testDeviceId,
+            items: [
+              {
+                entityName: 'products',
+                operation: 'UPDATE',
+                recordId: product1Id,
+                payload: {
+                  name: 'Authorized Device Coffee Update',
+                },
+              },
+            ],
+          }),
+        },
+        testDeviceToken
+      );
+      assert.equal(pushRes.status, 200);
+    });
+
+    await t2.test('8.2 Unauthorized device cannot sync (HTTP 403)', async () => {
+      // 1. Admin creates a new device entry with is_authorized = false
+      const unauthUid = `unauth-terminal-${Date.now()}`;
+      const regRes = await apiRequest(
+        '/devices/register',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            deviceUid: unauthUid,
+            deviceName: 'Pending Approval Terminal',
+          }),
+        },
+        adminToken1
+      );
+      assert.equal(regRes.status, 201);
+      const unauthDevId = regRes.data.data.id;
+      assert.equal(regRes.data.data.is_authorized, false);
+
+      // 2. User logs in with that device
+      const loginRes = await apiRequest('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: cashier1Username,
+          password: 'CashierPassword@123',
+          deviceUid: unauthUid,
+        }),
+      });
+      assert.equal(loginRes.status, 200);
+      const unauthToken = loginRes.data.data.token;
+
+      // 3. Sync pull must be rejected with HTTP 403
+      const pullRes = await apiRequest('/sync/pull?cursor=0&limit=5', {}, unauthToken);
+      assert.equal(pullRes.status, 403);
+      assert.equal(pullRes.data.success, false);
+      assert.ok(pullRes.data.error.includes('revoked or pending approval'));
+
+      // 4. Sync push must be rejected with HTTP 403
+      const pushRes = await apiRequest(
+        '/sync/push',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            deviceId: unauthDevId,
+            items: [],
+          }),
+        },
+        unauthToken
+      );
+      assert.equal(pushRes.status, 403);
+      assert.equal(pushRes.data.success, false);
+    });
+
+    await t2.test('8.3 Revoked device cannot sync even with a previously issued JWT', async () => {
+      // 1. Device is initially authorized and syncing
+      const pullBeforeRevoke = await apiRequest('/sync/pull?cursor=0&limit=5', {}, testDeviceToken);
+      assert.equal(pullBeforeRevoke.status, 200);
+
+      // 2. Admin revokes authorization for this device
+      const revokeRes = await apiRequest(
+        `/devices/${testDeviceId}/authorization`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ isAuthorized: false }),
+        },
+        adminToken1
+      );
+      assert.equal(revokeRes.status, 200);
+      assert.equal(revokeRes.data.data.is_authorized, false);
+
+      // 3. Device uses the PREVIOUSLY ISSUED JWT (testDeviceToken) to call /sync/pull
+      const pullAfterRevoke = await apiRequest('/sync/pull?cursor=0&limit=5', {}, testDeviceToken);
+      assert.equal(pullAfterRevoke.status, 403, 'Previously issued JWT must not bypass device revocation on pull');
+      assert.equal(pullAfterRevoke.data.success, false);
+      assert.ok(pullAfterRevoke.data.error.includes('revoked or pending approval'));
+
+      // 4. Device uses the PREVIOUSLY ISSUED JWT to call /sync/push
+      const pushAfterRevoke = await apiRequest(
+        '/sync/push',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            deviceId: testDeviceId,
+            items: [],
+          }),
+        },
+        testDeviceToken
+      );
+      assert.equal(pushAfterRevoke.status, 403, 'Previously issued JWT must not bypass device revocation on push');
+      assert.equal(pushAfterRevoke.data.success, false);
+    });
+
+    await t2.test('8.4 Device belonging to another business cannot sync', async () => {
+      // 1. Register a device in Business 2
+      const biz2DevUid = `biz2-dev-${Date.now()}`;
+      const regRes = await apiRequest(
+        '/devices/register',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            deviceUid: biz2DevUid,
+            deviceName: 'Business 2 Terminal',
+          }),
+        },
+        adminToken2
+      );
+      assert.equal(regRes.status, 201);
+      const biz2DevId = regRes.data.data.id;
+
+      // Authorize Business 2 device
+      await apiRequest(
+        `/devices/${biz2DevId}/authorization`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ isAuthorized: true }),
+        },
+        adminToken2
+      );
+
+      // 2. Attempt to use Business 1 token with Business 2 device in request body
+      const spoofRes = await apiRequest(
+        '/sync/push',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            deviceId: biz2DevId, // Foreign device from Business 2
+            items: [],
+          }),
+        },
+        cashierToken1
+      );
+      assert.equal(spoofRes.status, 403);
+      assert.ok(spoofRes.data.error.includes('does not match authenticated device token'));
+    });
+
+    await t2.test('8.5 Revoking a device blocks its next sync request immediately', async () => {
+      // 1. Create a fresh terminal
+      const activeUid = `immediate-block-${Date.now()}`;
+      const loginRes = await apiRequest('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: cashier1Username,
+          password: 'CashierPassword@123',
+          deviceUid: activeUid,
+        }),
+      });
+      assert.equal(loginRes.status, 200);
+      const activeToken = loginRes.data.data.token;
+      const activeDevId = loginRes.data.data.deviceId;
+
+      // 2. Active sync succeeds
+      const firstPull = await apiRequest('/sync/pull?cursor=0&limit=1', {}, activeToken);
+      assert.equal(firstPull.status, 200);
+
+      // 3. Admin revokes the device
+      const revoke = await apiRequest(
+        `/devices/${activeDevId}/authorization`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ isAuthorized: false }),
+        },
+        adminToken1
+      );
+      assert.equal(revoke.status, 200);
+      assert.equal(revoke.data.data.is_authorized, false);
+
+      // 4. Immediate subsequent sync call must fail with 403
+      const immediateNextPull = await apiRequest('/sync/pull?cursor=0&limit=1', {}, activeToken);
+      assert.equal(immediateNextPull.status, 403);
+      assert.equal(immediateNextPull.data.success, false);
     });
   });
 });

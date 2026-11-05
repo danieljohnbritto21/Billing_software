@@ -11,6 +11,7 @@ export class DevicesService {
   }
 
   async registerDevice(businessId: string, data: RegisterDeviceInput) {
+    const clientIp = data.ipAddress || data.tailscaleIp;
     return prisma.devices.upsert({
       where: {
         business_id_device_uid: {
@@ -20,14 +21,14 @@ export class DevicesService {
       },
       update: {
         device_name: data.deviceName,
-        tailscale_ip: data.tailscaleIp,
+        tailscale_ip: clientIp,
         last_seen_at: new Date(),
       },
       create: {
         business_id: businessId,
         device_uid: data.deviceUid,
         device_name: data.deviceName,
-        tailscale_ip: data.tailscaleIp,
+        tailscale_ip: clientIp,
         is_authorized: false, // Requires Admin authorization
         last_seen_at: new Date(),
       },
@@ -42,13 +43,20 @@ export class DevicesService {
       throw new AppError(404, 'Device not found');
     }
 
-    return prisma.devices.update({
+    const updated = await prisma.devices.update({
       where: { id },
       data: {
         is_authorized: data.isAuthorized,
         authorized_at: data.isAuthorized ? new Date() : null,
       },
     });
+
+    await prisma.user_sessions.updateMany({
+      where: { device_id: id, business_id: businessId },
+      data: { is_revoked: !data.isAuthorized },
+    }).catch(() => {});
+
+    return updated;
   }
 
   async heartbeat(businessId: string, deviceUid: string) {

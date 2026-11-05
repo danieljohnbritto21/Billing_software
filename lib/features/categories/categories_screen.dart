@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/database/app_database.dart';
+import '../../core/sync/sync_provider.dart';
 import '../../core/theme/app_theme.dart';
 import 'category_repository.dart';
 
@@ -13,6 +14,16 @@ class CategoriesScreen extends ConsumerStatefulWidget {
 
 class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
   String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        ref.read(syncServiceProvider).syncNow();
+      } catch (_) {}
+    });
+  }
 
   void _showAddEditDialog({CategoryEntry? existingCategory}) {
     final nameController =
@@ -156,6 +167,11 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Sync categories',
+            icon: const Icon(Icons.sync_rounded, color: AppTheme.primaryGreen),
+            onPressed: () => ref.read(syncServiceProvider).syncNow(),
+          ),
           FilledButton.icon(
             style: FilledButton.styleFrom(
               backgroundColor: AppTheme.primaryGreen,
@@ -192,137 +208,143 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
             ),
           ),
 
-          // Categories List
+          // Categories List with Pull to Refresh
           Expanded(
-            child: categoriesAsync.when(
-              data: (categories) {
-                final filtered = categories.where((c) {
-                  if (_searchQuery.isEmpty) return true;
-                  return c.category.name.toLowerCase().contains(_searchQuery);
-                }).toList();
+            child: RefreshIndicator(
+              color: AppTheme.primaryGreen,
+              onRefresh: () => ref.read(syncServiceProvider).syncNow(),
+              child: categoriesAsync.when(
+                data: (categories) {
+                  final filtered = categories.where((c) {
+                    if (_searchQuery.isEmpty) return true;
+                    return c.category.name.toLowerCase().contains(_searchQuery);
+                  }).toList();
 
-                if (filtered.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                  if (filtered.isEmpty) {
+                    return ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
                       children: [
+                        const SizedBox(height: 64),
                         Icon(Icons.category_outlined,
                             size: 64, color: Colors.grey.shade400),
                         const SizedBox(height: 12),
-                        Text(
-                          _searchQuery.isEmpty
-                              ? 'No categories found'
-                              : 'No categories matching "$_searchQuery"',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey.shade600,
-                            fontWeight: FontWeight.w600,
+                        Center(
+                          child: Text(
+                            _searchQuery.isEmpty
+                                ? 'No categories found'
+                                : 'No categories matching "$_searchQuery"',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],
-                    ),
-                  );
-                }
-
-                return ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final item = filtered[index];
-                    final cat = item.category;
-
-                    return Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.grey.shade200),
-                      ),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: cat.isActive
-                              ? AppTheme.primaryGreen.withValues(alpha: 0.12)
-                              : Colors.grey.shade200,
-                          child: Icon(
-                            Icons.restaurant_menu,
-                            color: cat.isActive
-                                ? AppTheme.primaryGreen
-                                : Colors.grey.shade500,
-                          ),
-                        ),
-                        title: Row(
-                          children: [
-                            Text(
-                              cat.name,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: cat.isActive
-                                    ? Colors.black87
-                                    : Colors.grey.shade500,
-                                decoration: cat.isActive
-                                    ? null
-                                    : TextDecoration.lineThrough,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            if (!cat.isActive)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade200,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text(
-                                  'Inactive',
-                                  style: TextStyle(
-                                      fontSize: 11, color: Colors.grey),
-                                ),
-                              ),
-                          ],
-                        ),
-                        subtitle: Text(
-                          '${item.productCount} products  •  Display order: ${cat.displayOrder}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Switch for active/inactive
-                            Switch(
-                              value: cat.isActive,
-                              activeColor: AppTheme.primaryGreen,
-                              onChanged: (val) async {
-                                await ref
-                                    .read(categoryRepositoryProvider)
-                                    .setCategoryActive(cat.id, val);
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.edit_outlined, size: 20),
-                              tooltip: 'Edit Category',
-                              onPressed: () =>
-                                  _showAddEditDialog(existingCategory: cat),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline,
-                                  color: Colors.red, size: 20),
-                              tooltip: 'Delete Category',
-                              onPressed: () => _handleDelete(item),
-                            ),
-                          ],
-                        ),
-                      ),
                     );
-                  },
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (err, _) => Center(child: Text('Error: $err')),
+                  }
+
+                  return ListView.separated(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final item = filtered[index];
+                      final cat = item.category;
+
+                      return Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.grey.shade200),
+                        ),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: cat.isActive
+                                ? AppTheme.primaryGreen.withValues(alpha: 0.12)
+                                : Colors.grey.shade200,
+                            child: Icon(
+                              Icons.restaurant_menu,
+                              color: cat.isActive
+                                  ? AppTheme.primaryGreen
+                                  : Colors.grey.shade500,
+                            ),
+                          ),
+                          title: Row(
+                            children: [
+                              Text(
+                                cat.name,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: cat.isActive
+                                      ? Colors.black87
+                                      : Colors.grey.shade500,
+                                  decoration: cat.isActive
+                                      ? null
+                                      : TextDecoration.lineThrough,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              if (!cat.isActive)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade200,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text(
+                                    'Inactive',
+                                    style: TextStyle(
+                                        fontSize: 11, color: Colors.grey),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          subtitle: Text(
+                            '${item.productCount} products  •  Display order: ${cat.displayOrder}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Switch for active/inactive
+                              Switch(
+                                value: cat.isActive,
+                                activeColor: AppTheme.primaryGreen,
+                                onChanged: (val) async {
+                                  await ref
+                                      .read(categoryRepositoryProvider)
+                                      .setCategoryActive(cat.id, val);
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 20),
+                                tooltip: 'Edit Category',
+                                onPressed: () =>
+                                    _showAddEditDialog(existingCategory: cat),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline,
+                                    color: Colors.red, size: 20),
+                                tooltip: 'Delete Category',
+                                onPressed: () => _handleDelete(item),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (err, _) => Center(child: Text('Error: $err')),
+              ),
             ),
           ),
         ],

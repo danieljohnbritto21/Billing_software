@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/sync/sync_provider.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/server_connection_dialog.dart';
 import 'auth_provider.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -131,7 +133,49 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 20),
+
+                      // Server Endpoint Configuration Bar
+                      FutureBuilder<String>(
+                        future: ref.read(apiClientProvider).getBaseUrl(),
+                        builder: (context, snapshot) {
+                          final currentUrl = snapshot.data ?? 'Checking server...';
+                          return InkWell(
+                            onTap: () async {
+                              final updated = await ServerConnectionDialog.show(context);
+                              if (updated == true && mounted) {
+                                setState(() {});
+                              }
+                            },
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.cloud_sync_outlined, size: 16, color: Color(0xFF64748B)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Server: $currentUrl',
+                                      style: const TextStyle(fontSize: 11, color: Color(0xFF475569), fontWeight: FontWeight.w500),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Text('Edit', style: TextStyle(fontSize: 11, color: AppTheme.primaryGreen, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 16),
 
                       // Error Banner if login failed
                       if (authState.error != null) ...[

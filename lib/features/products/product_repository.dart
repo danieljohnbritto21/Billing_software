@@ -35,6 +35,15 @@ class ProductRepository {
 
   ProductRepository(this._db, [this._sync, this._api]);
 
+  Future<String?> _resolveBusinessId() async {
+    final apiBizId = _api?.businessId;
+    if (apiBizId != null && apiBizId.isNotEmpty) {
+      return apiBizId;
+    }
+    final setting = await (_db.select(_db.appSettings)..where((s) => s.key.equals('business_id'))).getSingleOrNull();
+    return setting?.value;
+  }
+
   Stream<List<ProductWithCategory>> watchProducts({
     String? searchQuery,
     String? categoryId,
@@ -246,107 +255,161 @@ class ProductRepository {
   }) async {
     final now = DateTime.now();
     final productId = _uuid.v4();
-    await _db.into(_db.products).insert(
-          ProductsCompanion.insert(
-            id: productId,
-            name: name.trim(),
-            code: Value(code?.trim()),
-            categoryId: Value(categoryId),
-            description: Value(description?.trim()),
-            sellingPricePaise: sellingPricePaise,
-            costPricePaise: Value(costPricePaise),
-            gstRatePercent: Value(gstRatePercent),
-            isTaxInclusive: Value(isTaxInclusive),
-            unit: Value(unit),
-            isAvailable: Value(isAvailable),
-            createdAt: now,
-            updatedAt: now,
-            syncStatus: const Value('pending_insert'),
-          ),
-        );
+    final bizId = await _resolveBusinessId();
 
-    if (images != null && images.isNotEmpty) {
-      await addProductImages(productId, images);
+    String? categoryName;
+    if (categoryId != null && categoryId.isNotEmpty) {
+      final cat = await (_db.select(_db.categories)..where((c) => c.id.equals(categoryId))).getSingleOrNull();
+      categoryName = cat?.name;
     }
 
-    _sync?.enqueueChange(
-      entityName: 'products',
-      recordId: productId,
-      operation: 'INSERT',
-      payload: {
-        'id': productId,
-        'name': name.trim(),
-        'code': code?.trim(),
-        'categoryId': categoryId,
-        'description': description?.trim(),
-        'sellingPricePaise': sellingPricePaise,
-        'costPricePaise': costPricePaise,
-        'gstRatePercent': gstRatePercent,
-        'isTaxInclusive': isTaxInclusive,
-        'unit': unit,
-        'isAvailable': isAvailable,
-      },
-    );
+    final productPayload = {
+      'id': productId,
+      'businessId': bizId,
+      'name': name.trim(),
+      'code': code?.trim(),
+      'categoryId': categoryId,
+      'categoryName': categoryName,
+      'description': description?.trim(),
+      'sellingPricePaise': sellingPricePaise,
+      'costPricePaise': costPricePaise,
+      'gstRatePercent': gstRatePercent,
+      'isTaxInclusive': isTaxInclusive,
+      'unit': unit,
+      'isAvailable': isAvailable,
+    };
+
+    // ATOMIC TRANSACTION: Write product and syncQueue together to local SQLite
+    await _db.transaction(() async {
+      await _db.into(_db.products).insert(
+            ProductsCompanion.insert(
+              id: productId,
+              businessId: Value(bizId),
+              name: name.trim(),
+              code: Value(code?.trim()),
+              categoryId: Value(categoryId),
+              description: Value(description?.trim()),
+              sellingPricePaise: sellingPricePaise,
+              costPricePaise: Value(costPricePaise),
+              gstRatePercent: Value(gstRatePercent),
+              isTaxInclusive: Value(isTaxInclusive),
+              unit: Value(unit),
+              isAvailable: Value(isAvailable),
+              createdAt: now,
+              updatedAt: now,
+              syncStatus: const Value('pending_insert'),
+            ),
+          );
+
+      if (_sync != null) {
+        await _sync.enqueueChange(
+          entityName: 'products',
+          recordId: productId,
+          operation: 'INSERT',
+          payload: productPayload,
+          triggerSync: false,
+        );
+      }
+    });
+
+    _sync?.notifyPendingAndSync();
+
+    if (images != null && images.isNotEmpty) {
+      try {
+        await addProductImages(productId, images);
+      } catch (_) {
+        // Preserved in local SQLite
+      }
+    }
 
     return productId;
   }
 
   Future<void> updateProduct(ProductEntry product, {List<Uint8List>? newImages}) async {
     final now = DateTime.now();
-    await _db.update(_db.products).replace(
-          product.copyWith(
-            updatedAt: now,
-            syncStatus: const Value('pending_update'),
-          ),
-        );
+    final bizId = await _resolveBusinessId() ?? product.businessId;
 
-    if (newImages != null && newImages.isNotEmpty) {
-      await addProductImages(product.id, newImages);
+    String? categoryName;
+    if (product.categoryId != null && product.categoryId!.isNotEmpty) {
+      final cat = await (_db.select(_db.categories)..where((c) => c.id.equals(product.categoryId!))).getSingleOrNull();
+      categoryName = cat?.name;
     }
 
-    _sync?.enqueueChange(
-      entityName: 'products',
-      recordId: product.id,
-      operation: 'UPDATE',
-      payload: {
-        'id': product.id,
-        'name': product.name,
-        'code': product.code,
-        'categoryId': product.categoryId,
-        'description': product.description,
-        'sellingPricePaise': product.sellingPricePaise,
-        'costPricePaise': product.costPricePaise,
-        'gstRatePercent': product.gstRatePercent,
-        'isTaxInclusive': product.isTaxInclusive,
-        'unit': product.unit,
-        'isAvailable': product.isAvailable,
-      },
-    );
+    final productPayload = {
+      'id': product.id,
+      'businessId': bizId,
+      'name': product.name,
+      'code': product.code,
+      'categoryId': product.categoryId,
+      'categoryName': categoryName,
+      'description': product.description,
+      'sellingPricePaise': product.sellingPricePaise,
+      'costPricePaise': product.costPricePaise,
+      'gstRatePercent': product.gstRatePercent,
+      'isTaxInclusive': product.isTaxInclusive,
+      'unit': product.unit,
+      'isAvailable': product.isAvailable,
+    };
+
+    await _db.transaction(() async {
+      await _db.update(_db.products).replace(
+            product.copyWith(
+              businessId: Value(bizId),
+              updatedAt: now,
+              syncStatus: const Value('pending_update'),
+            ),
+          );
+
+      if (_sync != null) {
+        await _sync.enqueueChange(
+          entityName: 'products',
+          recordId: product.id,
+          operation: 'UPDATE',
+          payload: productPayload,
+          triggerSync: false,
+        );
+      }
+    });
+
+    _sync?.notifyPendingAndSync();
+
+    if (newImages != null && newImages.isNotEmpty) {
+      try {
+        await addProductImages(product.id, newImages);
+      } catch (_) {
+        // Preserved in local SQLite
+      }
+    }
   }
 
   Future<void> toggleAvailability(String id, bool isAvailable) async {
     final now = DateTime.now();
-    await (_db.update(_db.products)..where((t) => t.id.equals(id)))
-        .write(ProductsCompanion(
-      isAvailable: Value(isAvailable),
-      updatedAt: Value(now),
-      syncStatus: const Value('pending_update'),
-    ));
+    await _db.transaction(() async {
+      await (_db.update(_db.products)..where((t) => t.id.equals(id)))
+          .write(ProductsCompanion(
+        isAvailable: Value(isAvailable),
+        updatedAt: Value(now),
+        syncStatus: const Value('pending_update'),
+      ));
 
-    final p = await getProductById(id);
-    if (p != null) {
-      _sync?.enqueueChange(
-        entityName: 'products',
-        recordId: id,
-        operation: 'UPDATE',
-        payload: {
-          'id': id,
-          'name': p.name,
-          'sellingPricePaise': p.sellingPricePaise,
-          'isAvailable': isAvailable,
-        },
-      );
-    }
+      final p = await (_db.select(_db.products)..where((t) => t.id.equals(id))).getSingleOrNull();
+      if (p != null && _sync != null) {
+        await _sync.enqueueChange(
+          entityName: 'products',
+          recordId: id,
+          operation: 'UPDATE',
+          payload: {
+            'id': id,
+            'name': p.name,
+            'sellingPricePaise': p.sellingPricePaise,
+            'isAvailable': isAvailable,
+          },
+          triggerSync: false,
+        );
+      }
+    });
+
+    _sync?.notifyPendingAndSync();
   }
 
   Future<bool> deleteProductSafely(String id) async {
@@ -355,48 +418,57 @@ class ProductRepository {
         .get();
 
     final now = DateTime.now();
-    if (count.isNotEmpty) {
-      // Historical invoice items exist: deactivate instead of deleting to preserve financial integrity
-      await (_db.update(_db.products)..where((t) => t.id.equals(id))).write(
-        ProductsCompanion(
-          isAvailable: const Value(false),
-          updatedAt: Value(now),
-          syncStatus: const Value('pending_update'),
-        ),
-      );
+    final isDeactivated = count.isNotEmpty;
 
-      final p = await (_db.select(_db.products)..where((t) => t.id.equals(id))).getSingleOrNull();
-      if (p != null) {
-        _sync?.enqueueChange(
-          entityName: 'products',
-          recordId: id,
-          operation: 'UPDATE',
-          payload: {
-            'id': id,
-            'name': p.name,
-            'sellingPricePaise': p.sellingPricePaise,
-            'isAvailable': false,
-          },
+    await _db.transaction(() async {
+      if (isDeactivated) {
+        // Historical invoice items exist: deactivate instead of deleting to preserve financial integrity
+        await (_db.update(_db.products)..where((t) => t.id.equals(id))).write(
+          ProductsCompanion(
+            isAvailable: const Value(false),
+            updatedAt: Value(now),
+            syncStatus: const Value('pending_update'),
+          ),
         );
-      }
-      return false; // Deactivated, not deleted
-    } else {
-      await (_db.update(_db.products)..where((t) => t.id.equals(id))).write(
-        ProductsCompanion(
-          deletedAt: Value(now),
-          isAvailable: const Value(false),
-          syncStatus: const Value('pending_delete'),
-        ),
-      );
 
-      _sync?.enqueueChange(
-        entityName: 'products',
-        recordId: id,
-        operation: 'DELETE',
-        payload: {},
-      );
-      return true;
-    }
+        final p = await (_db.select(_db.products)..where((t) => t.id.equals(id))).getSingleOrNull();
+        if (p != null && _sync != null) {
+          await _sync.enqueueChange(
+            entityName: 'products',
+            recordId: id,
+            operation: 'UPDATE',
+            payload: {
+              'id': id,
+              'name': p.name,
+              'sellingPricePaise': p.sellingPricePaise,
+              'isAvailable': false,
+            },
+            triggerSync: false,
+          );
+        }
+      } else {
+        await (_db.update(_db.products)..where((t) => t.id.equals(id))).write(
+          ProductsCompanion(
+            deletedAt: Value(now),
+            isAvailable: const Value(false),
+            syncStatus: const Value('pending_delete'),
+          ),
+        );
+
+        if (_sync != null) {
+          await _sync.enqueueChange(
+            entityName: 'products',
+            recordId: id,
+            operation: 'DELETE',
+            payload: {},
+            triggerSync: false,
+          );
+        }
+      }
+    });
+
+    _sync?.notifyPendingAndSync();
+    return !isDeactivated;
   }
 
   Future<void> seedSampleProductsIfEmpty() async {

@@ -20,7 +20,10 @@ final syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.watch(databaseProvider);
   final api = ref.watch(apiClientProvider);
   final deviceService = ref.watch(deviceServiceProvider);
-  return SyncService(db, api, deviceService);
+  final service = SyncService(db, api, deviceService);
+  service.startAutoSync(interval: const Duration(seconds: 5));
+  ref.onDispose(() => service.stopAutoSync());
+  return service;
 });
 
 final syncStateProvider = StreamProvider<SyncState>((ref) {

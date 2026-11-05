@@ -10,22 +10,40 @@ import '../categories/category_repository.dart';
 import '../invoices/invoice_repository.dart';
 import '../products/product_repository.dart';
 import '../settings/settings_repository.dart';
+import '../../core/sync/sync_provider.dart';
+import '../../core/sync/sync_service.dart';
 import 'cart_provider.dart';
 
 final selectedPosCategoryProvider = StateProvider<String>((ref) => 'ALL');
 final posSearchQueryProvider = StateProvider<String>((ref) => '');
 
-class CashierMenuScreen extends ConsumerWidget {
+class CashierMenuScreen extends ConsumerStatefulWidget {
   const CashierMenuScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CashierMenuScreen> createState() => _CashierMenuScreenState();
+}
+
+class _CashierMenuScreenState extends ConsumerState<CashierMenuScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        ref.read(syncServiceProvider).syncNow();
+      } catch (_) {}
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final settingsAsync = ref.watch(settingsStreamProvider);
     final categoriesAsync = ref.watch(categoriesStreamProvider);
     final selectedCategory = ref.watch(selectedPosCategoryProvider);
     final searchQuery = ref.watch(posSearchQueryProvider);
     final cart = ref.watch(cartProvider);
     final currentUser = ref.watch(currentUserProvider);
+    final syncState = ref.watch(syncStateProvider).value;
 
     final restaurantName = settingsAsync.value?['business_name'] ?? 'FoodBill Pro';
 
@@ -126,7 +144,39 @@ class CashierMenuScreen extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 4),
+                      // Live Sync Status Button
+                      IconButton(
+                        tooltip: syncState?.status == SyncStatusType.syncing
+                            ? 'Syncing in progress...'
+                            : syncState?.status == SyncStatusType.offline
+                                ? 'Offline mode (Tap to sync)'
+                                : 'Synced with server (Tap to sync)',
+                        icon: syncState?.status == SyncStatusType.syncing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Color(0xFF78350F),
+                                ),
+                              )
+                            : Icon(
+                                syncState?.status == SyncStatusType.offline
+                                    ? Icons.cloud_off_outlined
+                                    : syncState?.status == SyncStatusType.error
+                                        ? Icons.sync_problem_outlined
+                                        : Icons.cloud_done_outlined,
+                                color: syncState?.status == SyncStatusType.offline
+                                    ? Colors.amber.shade900
+                                    : syncState?.status == SyncStatusType.error
+                                        ? Colors.red.shade700
+                                        : const Color(0xFF166534),
+                                size: 20,
+                              ),
+                        onPressed: () => ref.read(syncServiceProvider).syncNow(),
+                      ),
+                      const SizedBox(width: 4),
                       // Cart Quick Button
                       InkWell(
                         onTap: () => context.go('/cart'),

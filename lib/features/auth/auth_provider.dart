@@ -38,10 +38,9 @@ class AuthState {
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthRepository _repo;
-  final ApiClient? _api;
   final SyncService? _sync;
 
-  AuthNotifier(this._repo, [this._api, this._sync]) : super(const AuthState());
+  AuthNotifier(this._repo, [ApiClient? api, this._sync]) : super(const AuthState());
 
   Future<bool> login(String username, String password) async {
     state = state.copyWith(isLoading: true, clearError: true);
@@ -65,8 +64,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  void logout() {
-    _api?.setAuthToken(null);
+  Future<void> logout() async {
+    await _repo.clearSession();
     state = const AuthState();
   }
 

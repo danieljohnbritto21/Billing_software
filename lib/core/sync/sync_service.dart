@@ -96,10 +96,26 @@ class SyncService extends ChangeNotifier {
     required String operation, // 'INSERT', 'UPDATE', 'DELETE'
     required Map<String, dynamic> payload,
     String? idempotencyKey,
+    BigInt? clientVersion,
+    bool triggerSync = true,
   }) async {
     final bizId = _api.businessId ?? 'default_biz';
     final devId = await _deviceService.getOrGenerateDeviceUid();
     final idemp = idempotencyKey ?? _uuid.v4();
+
+    // Look up existing record's serverVersion if this is an update and no clientVersion was passed
+    BigInt? version = clientVersion;
+    if (version == null && operation == 'UPDATE') {
+      try {
+        if (entityName == 'products') {
+          final p = await (_db.select(_db.products)..where((t) => t.id.equals(recordId))).getSingleOrNull();
+          version = p?.serverVersion;
+        } else if (entityName == 'categories') {
+          final c = await (_db.select(_db.categories)..where((t) => t.id.equals(recordId))).getSingleOrNull();
+          version = c?.serverVersion;
+        }
+      } catch (_) {}
+    }
 
     await _db.into(_db.syncQueue).insert(
       SyncQueueCompanion.insert(
@@ -111,18 +127,30 @@ class SyncService extends ChangeNotifier {
         operation: operation,
         payloadJson: jsonEncode(payload),
         idempotencyKey: idemp,
+        clientVersion: drift.Value(version),
         createdAt: DateTime.now(),
       ),
     );
 
-    await _updatePendingCount();
-    // Trigger sync immediately in background
+    if (triggerSync) {
+      await _updatePendingCount();
+      // Trigger sync immediately in background
+      unawaited(syncNow());
+    }
+  }
+
+  /// Triggers pending count recalculation and background sync after atomic outer transactions
+  void notifyPendingAndSync() {
+    _updatePendingCount();
     unawaited(syncNow());
   }
 
   /// Main two-way synchronization loop: pushes local changes then pulls remote changes
   Future<bool> syncNow() async {
     if (_isSyncing) return false;
+    if (_api.authToken == null || _api.authToken!.isEmpty) {
+      await _api.restoreSavedAuth();
+    }
     if (_api.authToken == null || _api.authToken!.isEmpty) {
       _state = _state.copyWith(status: SyncStatusType.offline);
       notifyListeners();
@@ -207,6 +235,24 @@ class SyncService extends ChangeNotifier {
 
           if (r['status'] == 'synced') {
             await (_db.delete(_db.syncQueue)..where((q) => q.id.equals(qItem.id))).go();
+
+            // Mark local record as synced and store serverVersion if available
+            final sVer = r['serverVersion'] != null ? BigInt.tryParse(r['serverVersion'].toString()) : null;
+            if (qItem.syncEntity == 'products') {
+              await (_db.update(_db.products)..where((p) => p.id.equals(qItem.recordId))).write(
+                ProductsCompanion(
+                  syncStatus: const drift.Value('synced'),
+                  serverVersion: sVer != null ? drift.Value(sVer) : const drift.Value.absent(),
+                ),
+              );
+            } else if (qItem.syncEntity == 'categories') {
+              await (_db.update(_db.categories)..where((c) => c.id.equals(qItem.recordId))).write(
+                CategoriesCompanion(
+                  syncStatus: const drift.Value('synced'),
+                  serverVersion: sVer != null ? drift.Value(sVer) : const drift.Value.absent(),
+                ),
+              );
+            }
           } else if (r['status'] == 'conflict') {
             await _db.into(_db.syncConflicts).insert(
               SyncConflictsCompanion.insert(
@@ -301,7 +347,9 @@ class SyncService extends ChangeNotifier {
     BigInt? version,
     String bizId,
   ) async {
-    final isDelete = op == 'DELETE' || data == null;
+    final d = data as Map<String, dynamic>?;
+    final isSoftDeleted = d != null && (d['deleted_at'] != null || d['deletedAt'] != null);
+    final isDelete = op == 'DELETE' || data == null || isSoftDeleted;
 
     switch (entity) {
       case 'categories':
@@ -314,11 +362,26 @@ class SyncService extends ChangeNotifier {
             ),
           );
         } else {
-          final d = data as Map<String, dynamic>;
+          final catName = (d!['name'] ?? '').toString();
+          // Check if there was an unsynced local placeholder category with the same name
+          if (catName.isNotEmpty) {
+            final localMatching = await (_db.select(_db.categories)
+              ..where((c) => c.name.equals(catName) & c.id.isNotValue(recordId)))
+              .get();
+            for (final localCat in localMatching) {
+              await (_db.update(_db.products)..where((p) => p.categoryId.equals(localCat.id))).write(
+                ProductsCompanion(categoryId: drift.Value(recordId)),
+              );
+              if (localCat.businessId == null || localCat.businessId != bizId) {
+                await (_db.delete(_db.categories)..where((c) => c.id.equals(localCat.id))).go();
+              }
+            }
+          }
+
           await _db.into(_db.categories).insertOnConflictUpdate(
             CategoriesCompanion.insert(
               id: recordId,
-              name: d['name'] ?? '',
+              name: catName,
               icon: drift.Value(d['icon']),
               colorValue: drift.Value(d['color_value'] ?? d['colorValue']),
               isActive: drift.Value(d['is_active'] ?? d['isActive'] ?? true),
@@ -342,17 +405,50 @@ class SyncService extends ChangeNotifier {
             ),
           );
         } else {
-          final d = data as Map<String, dynamic>;
-          final costPaise = int.tryParse(d['cost_price_paise']?.toString() ?? '0') ?? 0;
+          final costPaise = int.tryParse(d!['cost_price_paise']?.toString() ?? '0') ?? 0;
           final sellPaise = int.tryParse(d['selling_price_paise']?.toString() ?? '0') ?? 0;
           final gstRate = double.tryParse(d['gst_rate_percent']?.toString() ?? '0.0') ?? 0.0;
+
+          // Safe Category foreign-key resolution
+          final rawCatId = (d['category_id'] ?? d['categoryId'])?.toString();
+          String? resolvedCatId;
+          if (rawCatId != null && rawCatId.isNotEmpty) {
+            final existingCat = await (_db.select(_db.categories)..where((c) => c.id.equals(rawCatId))).getSingleOrNull();
+            if (existingCat != null) {
+              resolvedCatId = rawCatId;
+            } else {
+              // Try matching by category name
+              final catName = (d['category_name'] ?? d['categoryName'])?.toString();
+              if (catName != null && catName.isNotEmpty) {
+                final matchByName = await (_db.select(_db.categories)..where((c) => c.name.equals(catName))).getSingleOrNull();
+                if (matchByName != null) {
+                  resolvedCatId = matchByName.id;
+                }
+              }
+              // If still not found, insert a placeholder category so SQLite foreign key constraint is satisfied
+              if (resolvedCatId == null) {
+                final placeholderName = (d['category_name'] ?? d['categoryName'] ?? 'General').toString();
+                await _db.into(_db.categories).insertOnConflictUpdate(
+                  CategoriesCompanion.insert(
+                    id: rawCatId,
+                    name: placeholderName,
+                    businessId: drift.Value(bizId),
+                    isActive: const drift.Value(true),
+                    createdAt: DateTime.now(),
+                    syncStatus: const drift.Value('synced'),
+                  ),
+                );
+                resolvedCatId = rawCatId;
+              }
+            }
+          }
 
           await _db.into(_db.products).insertOnConflictUpdate(
             ProductsCompanion.insert(
               id: recordId,
               name: d['name'] ?? '',
               code: drift.Value(d['code']),
-              categoryId: drift.Value(d['category_id'] ?? d['categoryId']),
+              categoryId: drift.Value(resolvedCatId),
               description: drift.Value(d['description']),
               costPricePaise: drift.Value(costPaise),
               sellingPricePaise: sellPaise,
@@ -372,7 +468,7 @@ class SyncService extends ChangeNotifier {
         break;
 
       case 'dining_tables':
-        if (isDelete) {
+        if (isDelete || d == null) {
           await (_db.update(_db.diningTables)..where((t) => t.id.equals(recordId))).write(
             DiningTablesCompanion(
               deletedAt: drift.Value(DateTime.now()),
@@ -380,7 +476,6 @@ class SyncService extends ChangeNotifier {
             ),
           );
         } else {
-          final d = data as Map<String, dynamic>;
           await _db.into(_db.diningTables).insertOnConflictUpdate(
             DiningTablesCompanion.insert(
               id: recordId,
@@ -397,14 +492,13 @@ class SyncService extends ChangeNotifier {
         break;
 
       case 'customers':
-        if (isDelete) {
+        if (isDelete || d == null) {
           await (_db.update(_db.customers)..where((c) => c.id.equals(recordId))).write(
             CustomersCompanion(
               deletedAt: drift.Value(DateTime.now()),
             ),
           );
         } else {
-          final d = data as Map<String, dynamic>;
           await _db.into(_db.customers).insertOnConflictUpdate(
             CustomersCompanion.insert(
               id: recordId,
@@ -422,8 +516,7 @@ class SyncService extends ChangeNotifier {
         break;
 
       case 'invoices':
-        if (!isDelete && data is Map<String, dynamic>) {
-          final d = data;
+        if (!isDelete && d != null) {
           await _db.into(_db.invoices).insertOnConflictUpdate(
             InvoicesCompanion.insert(
               id: recordId,
@@ -490,8 +583,7 @@ class SyncService extends ChangeNotifier {
         break;
 
       case 'payments':
-        if (!isDelete && data is Map<String, dynamic>) {
-          final d = data;
+        if (!isDelete && d != null) {
           await _db.into(_db.payments).insertOnConflictUpdate(
             PaymentsCompanion.insert(
               id: recordId,
@@ -510,8 +602,7 @@ class SyncService extends ChangeNotifier {
         break;
 
       case 'kot_records':
-        if (!isDelete && data is Map<String, dynamic>) {
-          final d = data;
+        if (!isDelete && d != null) {
           await _db.into(_db.kotRecords).insertOnConflictUpdate(
             KotRecordsCompanion.insert(
               id: recordId,

@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: foodbill-backend
+    runtime: node
+    plan: starter
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: foodbill-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: IMAGE_STORAGE_PATH
+        value: ./storage/images
+
+databases:
+  - name: foodbill-db
+    databaseName: foodbill
+    user: foodbill_app
+    plan: starter
+    postgresMajorVersion: 16

@@ -43,10 +43,23 @@ class ApiClient {
   }
 
   Future<String> getBaseUrl() async {
-    if (_cachedBaseUrl != null) return _cachedBaseUrl!;
+    if (_cachedBaseUrl != null && _cachedBaseUrl!.isNotEmpty) return _cachedBaseUrl!;
     final setting = await (_db.select(_db.appSettings)..where((s) => s.key.equals('server_api_url'))).getSingleOrNull();
-    _cachedBaseUrl = setting?.value ?? defaultBaseUrl;
+    if (setting != null && setting.value.trim().isNotEmpty) {
+      _cachedBaseUrl = setting.value.trim();
+      return _cachedBaseUrl!;
+    }
+    _cachedBaseUrl = defaultBaseUrl;
     return _cachedBaseUrl!;
+  }
+
+  Future<String?> getConfiguredBaseUrl() async {
+    final setting = await (_db.select(_db.appSettings)..where((s) => s.key.equals('server_api_url'))).getSingleOrNull();
+    return setting?.value;
+  }
+
+  void clearCachedBaseUrl() {
+    _cachedBaseUrl = null;
   }
 
   Future<void> setBaseUrl(String url) async {
@@ -55,6 +68,68 @@ class ApiClient {
     await _db.into(_db.appSettings).insertOnConflictUpdate(
       AppSettingsCompanion.insert(key: 'server_api_url', value: clean),
     );
+  }
+
+  /// Tests connectivity to a given server base URL by probing /health
+  Future<Map<String, dynamic>> testConnection(String url) async {
+    final clean = url.trim().replaceAll(RegExp(r'/+$'), '');
+    if (clean.isEmpty) {
+      return {'success': false, 'error': 'Server URL cannot be empty'};
+    }
+
+    final healthUrls = [
+      '$clean/health',
+      if (clean.endsWith('/api/v1')) clean.replaceAll('/api/v1', '/health'),
+      if (!clean.endsWith('/api/v1')) '$clean/api/v1/health',
+    ];
+
+    String lastError = 'No response';
+    final stopwatch = Stopwatch()..start();
+
+    for (final testUrl in healthUrls) {
+      try {
+        final uri = Uri.parse(testUrl);
+        final response = await _client.get(uri).timeout(const Duration(seconds: 6));
+        stopwatch.stop();
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          return {
+            'success': true,
+            'latencyMs': stopwatch.elapsedMilliseconds,
+            'status': data['status'] ?? 'UP',
+            'database': data['database'] ?? 'connected',
+            'testedUrl': testUrl,
+          };
+        } else {
+          lastError = 'HTTP ${response.statusCode}: ${response.reasonPhrase}';
+        }
+      } catch (e) {
+        lastError = e.toString();
+      }
+    }
+
+    return {
+      'success': false,
+      'error': lastError,
+      'latencyMs': stopwatch.elapsedMilliseconds,
+    };
+  }
+
+  Future<void> restoreSavedAuth() async {
+    try {
+      final tokenSetting = await (_db.select(_db.appSettings)..where((s) => s.key.equals('auth_token'))).getSingleOrNull();
+      if (tokenSetting != null && tokenSetting.value.isNotEmpty) {
+        _authToken = tokenSetting.value;
+      }
+      final bizSetting = await (_db.select(_db.appSettings)..where((s) => s.key.equals('business_id'))).getSingleOrNull();
+      if (bizSetting != null && bizSetting.value.isNotEmpty) {
+        _businessId = bizSetting.value;
+      }
+      final devSetting = await (_db.select(_db.appSettings)..where((s) => s.key.equals('device_id'))).getSingleOrNull();
+      if (devSetting != null && devSetting.value.isNotEmpty) {
+        _deviceId = devSetting.value;
+      }
+    } catch (_) {}
   }
 
   void setAuthToken(String? token) {
@@ -76,9 +151,14 @@ class ApiClient {
   String? get deviceId => _deviceId;
 
   Future<Map<String, String>> _headers({String? idempotencyKey}) async {
+    if (_authToken == null || _authToken!.isEmpty) {
+      await restoreSavedAuth();
+    }
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      'Cache-Control': 'no-cache, no-store',
+      'Pragma': 'no-cache',
     };
     if (_authToken != null && _authToken!.isNotEmpty) {
       headers['Authorization'] = 'Bearer $_authToken';
@@ -168,6 +248,11 @@ class ApiClient {
   }
 
   dynamic _handleResponse(http.Response response) {
+    if (response.statusCode == 304) {
+      // 304 Not Modified - return safe empty change response for sync
+      return {'changes': [], 'notModified': true};
+    }
+
     dynamic decoded;
     try {
       decoded = jsonDecode(response.body);

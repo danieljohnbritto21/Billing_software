@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/sync/sync_provider.dart';
+import '../../core/sync/sync_service.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/server_connection_dialog.dart';
 import '../auth/auth_provider.dart';
 import '../categories/category_repository.dart';
 import '../products/product_repository.dart';
@@ -451,8 +454,140 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 20),
 
+          // Server & Multi-Device Synchronization
+          const Text(
+            'Server & Multi-Device Synchronization',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
 
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Consumer(
+                builder: (context, ref, _) {
+                  final syncState = ref.watch(syncServiceProvider).state;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FutureBuilder<String>(
+                        future: ref.read(apiClientProvider).getBaseUrl(),
+                        builder: (context, snapshot) {
+                          final url = snapshot.data ?? 'Loading...';
+                          return Row(
+                            children: [
+                              const Icon(Icons.cloud_done_rounded, color: AppTheme.primaryGreen, size: 22),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Backend Server URL',
+                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      url,
+                                      style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.edit_rounded, size: 16),
+                                label: const Text('Configure'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                ),
+                                onPressed: () async {
+                                  final updated = await ServerConnectionDialog.show(context);
+                                  if (updated == true && context.mounted) {
+                                    ref.read(syncServiceProvider).syncNow();
+                                  }
+                                },
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const Divider(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Sync Status: ${syncState.status.name.toUpperCase()}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: syncState.status == SyncStatusType.synced
+                                      ? AppTheme.primaryGreen
+                                      : (syncState.status == SyncStatusType.error ? Colors.red : AppTheme.textMuted),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Pending Queue: ${syncState.pendingCount} item(s)',
+                                style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                              ),
+                              if (syncState.lastSyncAt != null)
+                                Text(
+                                  'Last Synced: ${syncState.lastSyncAt!.hour.toString().padLeft(2, '0')}:${syncState.lastSyncAt!.minute.toString().padLeft(2, '0')}',
+                                  style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                                ),
+                            ],
+                          ),
+                          ElevatedButton.icon(
+                            icon: syncState.status == SyncStatusType.syncing
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
+                                  )
+                                : const Icon(Icons.sync_rounded, size: 16),
+                            label: const Text('Sync Now'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryGreen,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            ),
+                            onPressed: syncState.status == SyncStatusType.syncing
+                                ? null
+                                : () async {
+                                    await ref.read(syncServiceProvider).syncNow();
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Synchronization finished!'),
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  },
+                          ),
+                        ],
+                      ),
+                      if (syncState.errorMessage != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Sync Error: ${syncState.errorMessage}',
+                          style: const TextStyle(fontSize: 11, color: Colors.red),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
 
           // Offline Local Database Info
           const Text(

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/constants/app_constants.dart';
 import 'core/database/database_provider.dart';
+import 'core/sync/sync_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/auth_repository.dart';
 import 'features/categories/category_repository.dart';
@@ -36,22 +37,46 @@ class FoodBillProApp extends ConsumerStatefulWidget {
   ConsumerState<FoodBillProApp> createState() => _FoodBillProAppState();
 }
 
-class _FoodBillProAppState extends ConsumerState<FoodBillProApp> {
+class _FoodBillProAppState extends ConsumerState<FoodBillProApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _seedDatabase();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Whenever app is resumed/unlocked/brought to foreground, trigger sync immediately
+      try {
+        ref.read(syncServiceProvider).syncNow();
+      } catch (_) {}
+    }
   }
 
   Future<void> _seedDatabase() async {
     try {
       final db = ref.read(databaseProvider);
-      final authRepo = AuthRepository(db);
+      final api = ref.read(apiClientProvider);
+      await api.restoreSavedAuth();
+
+      final authRepo = AuthRepository(db, api);
       final categoryRepo = CategoryRepository(db);
       final productRepo = ProductRepository(db);
       await authRepo.seedInitialUsersIfEmpty();
       await categoryRepo.seedDefaultCategoriesIfEmpty();
       await productRepo.seedSampleProductsIfEmpty();
+
+      // Trigger initial sync if authorized
+      final sync = ref.read(syncServiceProvider);
+      sync.syncNow();
     } catch (_) {
       // Seeding is best-effort; the app is functional without it
     }

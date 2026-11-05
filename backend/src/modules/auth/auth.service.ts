@@ -70,11 +70,40 @@ export class AuthService {
         });
       }
 
+      // 5. Register initial authorized primary admin terminal
+      const adminDevice = await tx.devices.create({
+        data: {
+          business_id: business.id,
+          device_uid: `admin-device-${business.id}`,
+          device_name: 'Primary Admin Console',
+          is_authorized: true,
+          authorized_at: new Date(),
+          last_seen_at: new Date(),
+        },
+      });
+
+      let sessionId: string | undefined;
+      const session = await tx.user_sessions.create({
+        data: {
+          user_id: user.id,
+          device_id: adminDevice.id,
+          business_id: business.id,
+          refresh_token_hash: 'admin_initial_session',
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          is_revoked: false,
+        },
+      }).catch(() => null);
+      if (session) {
+        sessionId = session.id;
+      }
+
       const token = this.generateToken({
         userId: user.id,
         businessId: business.id,
         role: 'admin',
         username: user.username,
+        deviceId: adminDevice.id,
+        sessionId,
       });
 
       return {
@@ -89,6 +118,7 @@ export class AuthService {
           fullName: user.full_name,
           role: user.role_id,
         },
+        deviceId: adminDevice.id,
         token,
       };
     });
@@ -134,12 +164,38 @@ export class AuthService {
           business_id: user.business_id,
           device_uid: data.deviceUid,
           device_name: data.deviceName || 'Android Terminal',
-          is_authorized: true, // Default to authorized in trusted private network
+          is_authorized: true, // Initial registration default
           authorized_at: new Date(),
           last_seen_at: new Date(),
         },
       });
       deviceId = device.id;
+    } else {
+      // Fallback: If no deviceUid provided, find primary device for this business
+      const primaryDevice = await prisma.devices.findFirst({
+        where: { business_id: user.business_id },
+        orderBy: { created_at: 'asc' },
+      });
+      if (primaryDevice) {
+        deviceId = primaryDevice.id;
+      }
+    }
+
+    let sessionId: string | undefined;
+    if (deviceId) {
+      const session = await prisma.user_sessions.create({
+        data: {
+          user_id: user.id,
+          device_id: deviceId,
+          business_id: user.business_id,
+          refresh_token_hash: 'login_session',
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          is_revoked: false,
+        },
+      }).catch(() => null);
+      if (session) {
+        sessionId = session.id;
+      }
     }
 
     const token = this.generateToken({
@@ -148,6 +204,7 @@ export class AuthService {
       role: user.role_id as 'admin' | 'cashier',
       username: user.username,
       deviceId,
+      sessionId,
     });
 
     return {

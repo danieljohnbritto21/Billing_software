@@ -3,7 +3,8 @@ import { z } from 'zod';
 export const registerDeviceSchema = z.object({
   deviceUid: z.string().min(1).max(128),
   deviceName: z.string().min(1).max(100),
-  tailscaleIp: z.string().max(45).optional(),
+  ipAddress: z.string().max(45).optional(),
+  tailscaleIp: z.string().max(45).optional(), // Legacy alias retained for backward compatibility
 });
 
 export const updateDeviceAuthSchema = z.object({

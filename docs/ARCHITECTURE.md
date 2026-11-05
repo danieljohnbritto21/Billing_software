@@ -18,7 +18,7 @@ FoodBill Pro is an offline-first restaurant point-of-sale (POS) and inventory ma
 ┌───────────────────────────────────────────────────────────────────────────┐
 │                       FoodBill Pro Backend API                            │
 │  - Node.js, Express, TypeScript, Prisma ORM                               │
-│  - Port 3000 (LAN / Tailscale / Cloud)                                    │
+│  - Port 3000 (LAN / Cloud / Render HTTPS)                                 │
 │  - Device Registration & Admin Approval Gatekeeper                        │
 │  - Two-Way Synchronizer with Commit-Safe Cursor Outbox                    │
 └─────────────────────────────────────┬─────────────────────────────────────┘

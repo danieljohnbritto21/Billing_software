@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/api/api_client.dart';
 import '../../core/database/app_database.dart';
 import '../../core/database/database_provider.dart';
 import '../../core/sync/sync_provider.dart';
@@ -9,7 +10,8 @@ import '../../core/sync/sync_service.dart';
 final categoryRepositoryProvider = Provider<CategoryRepository>((ref) {
   final db = ref.watch(databaseProvider);
   final sync = ref.watch(syncServiceProvider);
-  return CategoryRepository(db, sync);
+  final api = ref.watch(apiClientProvider);
+  return CategoryRepository(db, sync, api);
 });
 
 final categoriesStreamProvider = StreamProvider<List<CategoryEntry>>((ref) {
@@ -36,9 +38,19 @@ final categoriesWithCountsStreamProvider =
 class CategoryRepository {
   final AppDatabase _db;
   final SyncService? _sync;
+  final ApiClient? _api;
   final _uuid = const Uuid();
 
-  CategoryRepository(this._db, [this._sync]);
+  CategoryRepository(this._db, [this._sync, this._api]);
+
+  Future<String?> _resolveBusinessId() async {
+    final apiBizId = _api?.businessId;
+    if (apiBizId != null && apiBizId.isNotEmpty) {
+      return apiBizId;
+    }
+    final setting = await (_db.select(_db.appSettings)..where((s) => s.key.equals('business_id'))).getSingleOrNull();
+    return setting?.value;
+  }
 
   Stream<List<CategoryEntry>> watchCategories({bool activeOnly = false}) {
     var query = _db.select(_db.categories)
@@ -111,65 +123,102 @@ class CategoryRepository {
   }) async {
     final id = _uuid.v4();
     final now = DateTime.now();
-    await _db.into(_db.categories).insert(
-          CategoriesCompanion.insert(
-            id: id,
-            name: name.trim(),
-            icon: Value(icon),
-            colorValue: Value(colorValue),
-            displayOrder: Value(displayOrder),
-            createdAt: now,
-            syncStatus: const Value('pending_insert'),
-          ),
-        );
+    final bizId = await _resolveBusinessId();
 
-    _sync?.enqueueChange(
-      entityName: 'categories',
-      recordId: id,
-      operation: 'INSERT',
-      payload: {
-        'name': name.trim(),
-        'icon': icon,
-        'colorValue': colorValue,
-        'displayOrder': displayOrder,
-        'isActive': true,
-      },
-    );
+    final payload = {
+      'id': id,
+      'businessId': bizId,
+      'name': name.trim(),
+      'icon': icon,
+      'colorValue': colorValue,
+      'displayOrder': displayOrder,
+      'isActive': true,
+    };
+
+    await _db.transaction(() async {
+      await _db.into(_db.categories).insert(
+            CategoriesCompanion.insert(
+              id: id,
+              businessId: Value(bizId),
+              name: name.trim(),
+              icon: Value(icon),
+              colorValue: Value(colorValue),
+              displayOrder: Value(displayOrder),
+              createdAt: now,
+              syncStatus: const Value('pending_insert'),
+            ),
+          );
+
+      if (_sync != null) {
+        await _sync.enqueueChange(
+          entityName: 'categories',
+          recordId: id,
+          operation: 'INSERT',
+          payload: payload,
+          triggerSync: false,
+        );
+      }
+    });
+
+    _sync?.notifyPendingAndSync();
   }
 
   Future<void> updateCategory(CategoryEntry category) async {
-    await _db.update(_db.categories).replace(
-      category.copyWith(syncStatus: const Value('pending_update')),
-    );
+    final bizId = await _resolveBusinessId() ?? category.businessId;
 
-    _sync?.enqueueChange(
-      entityName: 'categories',
-      recordId: category.id,
-      operation: 'UPDATE',
-      payload: {
-        'name': category.name,
-        'icon': category.icon,
-        'colorValue': category.colorValue,
-        'displayOrder': category.displayOrder,
-        'isActive': category.isActive,
-      },
-    );
+    final payload = {
+      'id': category.id,
+      'businessId': bizId,
+      'name': category.name,
+      'icon': category.icon,
+      'colorValue': category.colorValue,
+      'displayOrder': category.displayOrder,
+      'isActive': category.isActive,
+    };
+
+    await _db.transaction(() async {
+      await _db.update(_db.categories).replace(
+        category.copyWith(
+          businessId: Value(bizId),
+          syncStatus: const Value('pending_update'),
+        ),
+      );
+
+      if (_sync != null) {
+        await _sync.enqueueChange(
+          entityName: 'categories',
+          recordId: category.id,
+          operation: 'UPDATE',
+          payload: payload,
+          triggerSync: false,
+        );
+      }
+    });
+
+    _sync?.notifyPendingAndSync();
   }
 
   Future<void> setCategoryActive(String id, bool isActive) async {
-    await (_db.update(_db.categories)..where((t) => t.id.equals(id))).write(
-      CategoriesCompanion(
-        isActive: Value(isActive),
-        syncStatus: const Value('pending_update'),
-      ),
-    );
+    await _db.transaction(() async {
+      await (_db.update(_db.categories)..where((t) => t.id.equals(id))).write(
+        CategoriesCompanion(
+          isActive: Value(isActive),
+          syncStatus: const Value('pending_update'),
+        ),
+      );
 
-    _sync?.enqueueChange(
-      entityName: 'categories',
-      recordId: id,
-      operation: 'UPDATE',
-      payload: {'isActive': isActive},
-    );
+      if (_sync != null) {
+        await _sync.enqueueChange(
+          entityName: 'categories',
+          recordId: id,
+          operation: 'UPDATE',
+          payload: {'isActive': isActive},
+          triggerSync: false,
+        );
+      }
+    });
+
+    _sync?.notifyPendingAndSync();
   }
 
   Future<bool> deleteCategory(String id) async {
@@ -178,20 +227,27 @@ class CategoryRepository {
       await setCategoryActive(id, false);
       return false;
     } else {
-      await (_db.update(_db.categories)..where((t) => t.id.equals(id))).write(
-        CategoriesCompanion(
-          deletedAt: Value(DateTime.now()),
-          isActive: const Value(false),
-          syncStatus: const Value('pending_delete'),
-        ),
-      );
+      await _db.transaction(() async {
+        await (_db.update(_db.categories)..where((t) => t.id.equals(id))).write(
+          CategoriesCompanion(
+            deletedAt: Value(DateTime.now()),
+            isActive: const Value(false),
+            syncStatus: const Value('pending_delete'),
+          ),
+        );
 
-      _sync?.enqueueChange(
-        entityName: 'categories',
-        recordId: id,
-        operation: 'DELETE',
-        payload: {},
-      );
+        if (_sync != null) {
+          await _sync.enqueueChange(
+            entityName: 'categories',
+            recordId: id,
+            operation: 'DELETE',
+            payload: {},
+            triggerSync: false,
+          );
+        }
+      });
+
+      _sync?.notifyPendingAndSync();
       return true;
     }
   }
@@ -199,6 +255,7 @@ class CategoryRepository {
   Future<void> seedDefaultCategoriesIfEmpty() async {
     final count = await _db.categories.count().getSingle();
     if (count == 0) {
+      final bizId = await _resolveBusinessId();
       final defaults = [
         'Fast Food',
         'Beverages',
@@ -209,14 +266,30 @@ class CategoryRepository {
         'Combos',
       ];
       for (var i = 0; i < defaults.length; i++) {
+        final id = _uuid.v4();
         await _db.into(_db.categories).insert(
               CategoriesCompanion.insert(
-                id: _uuid.v4(),
+                id: id,
+                businessId: Value(bizId),
                 name: defaults[i],
                 displayOrder: Value(i),
                 createdAt: DateTime.now(),
+                syncStatus: const Value('pending_insert'),
               ),
             );
+
+        _sync?.enqueueChange(
+          entityName: 'categories',
+          recordId: id,
+          operation: 'INSERT',
+          payload: {
+            'id': id,
+            'businessId': bizId,
+            'name': defaults[i],
+            'displayOrder': i,
+            'isActive': true,
+          },
+        );
       }
     }
   }

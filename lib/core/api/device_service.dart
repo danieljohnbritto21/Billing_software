@@ -6,23 +6,26 @@ class DeviceInfo {
   final String deviceUid;
   final String deviceName;
   final bool isAuthorized;
-  final String? tailscaleIp;
+  final String? ipAddress;
   final DateTime? lastSeenAt;
 
   const DeviceInfo({
     required this.deviceUid,
     required this.deviceName,
     required this.isAuthorized,
-    this.tailscaleIp,
+    this.ipAddress,
     this.lastSeenAt,
   });
+
+  /// Backward-compatible alias for ipAddress
+  String? get tailscaleIp => ipAddress;
 
   factory DeviceInfo.fromJson(Map<String, dynamic> json) {
     return DeviceInfo(
       deviceUid: json['device_uid'] ?? json['deviceUid'] ?? '',
       deviceName: json['device_name'] ?? json['deviceName'] ?? 'Unknown Device',
       isAuthorized: json['is_authorized'] ?? json['isAuthorized'] ?? false,
-      tailscaleIp: json['tailscale_ip'] ?? json['tailscaleIp'],
+      ipAddress: json['ip_address'] ?? json['ipAddress'] ?? json['tailscale_ip'] ?? json['tailscaleIp'],
       lastSeenAt: json['last_seen_at'] != null ? DateTime.tryParse(json['last_seen_at']) : null,
     );
   }

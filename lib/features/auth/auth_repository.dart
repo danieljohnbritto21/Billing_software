@@ -54,18 +54,25 @@ class AuthRepository {
     final api = _api;
     if (api != null) {
       try {
+        final devUid = await _deviceService?.getOrGenerateDeviceUid();
+        final devName = await _deviceService?.getDeviceName();
         final res = await api.post('/auth/login', body: {
           'username': cleanUsername,
           'password': password,
+          if (devUid != null) 'deviceUid': devUid,
+          if (devName != null) 'deviceName': devName,
         });
 
         if (res is Map<String, dynamic> && res['token'] != null) {
           final token = res['token'].toString();
           final userJson = res['user'] as Map<String, dynamic>;
-          final bizId = userJson['businessId'] ?? userJson['business_id'];
+          final bizJson = res['business'] as Map<String, dynamic>?;
+          final bizId = bizJson?['id']?.toString() ?? userJson['businessId']?.toString() ?? userJson['business_id']?.toString();
+          final devId = res['deviceId']?.toString();
 
           api.setAuthToken(token);
-          api.setBusinessId(bizId?.toString());
+          if (bizId != null) api.setBusinessId(bizId);
+          if (devId != null) api.setDeviceId(devId);
 
           // Save auth settings locally
           await _db.into(_db.appSettings).insertOnConflictUpdate(
@@ -73,7 +80,12 @@ class AuthRepository {
           );
           if (bizId != null) {
             await _db.into(_db.appSettings).insertOnConflictUpdate(
-              AppSettingsCompanion.insert(key: 'business_id', value: bizId.toString()),
+              AppSettingsCompanion.insert(key: 'business_id', value: bizId),
+            );
+          }
+          if (devId != null) {
+            await _db.into(_db.appSettings).insertOnConflictUpdate(
+              AppSettingsCompanion.insert(key: 'device_id', value: devId),
             );
           }
 
@@ -138,9 +150,20 @@ class AuthRepository {
     if (user == null) return null;
 
     if (_verifyPassword(password, user.passwordHash, user.salt)) {
+      if (api != null) {
+        await api.restoreSavedAuth();
+      }
       return user;
     }
     return null;
+  }
+
+  /// Clears stored user session and tokens on logout
+  Future<void> clearSession() async {
+    _api?.setAuthToken(null);
+    _api?.setBusinessId(null);
+    _api?.setDeviceId(null);
+    await (_db.delete(_db.appSettings)..where((s) => s.key.isIn(['auth_token', 'business_id', 'device_id']))).go();
   }
 
   /// Seeds initial default Admin and Cashier accounts if no users exist locally

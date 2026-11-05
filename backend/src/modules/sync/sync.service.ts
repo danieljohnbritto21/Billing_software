@@ -4,6 +4,7 @@ import { SyncPullQuery, SyncPushBody } from './sync.schema';
 import { invoicesService } from '../invoices/invoices.service';
 import { paymentsService } from '../payments/payments.service';
 import { kotService } from '../kot/kot.service';
+import { logger } from '../../utils/logger';
 
 export class SyncService {
   async pullChanges(businessId: string, deviceId: string | undefined, query: SyncPullQuery) {
@@ -52,11 +53,22 @@ export class SyncService {
           data = await prisma.categories.findFirst({
             where: { id: entry.record_id, business_id: businessId },
           });
+          if (data && data.color_value !== null && data.color_value !== undefined) {
+            (data as any).color_value = data.color_value >>> 0;
+          }
           break;
         case 'products':
           data = await prisma.products.findFirst({
             where: { id: entry.record_id, business_id: businessId },
+            include: {
+              categories: {
+                select: { name: true },
+              },
+            },
           });
+          if (data && (data as any).categories) {
+            (data as any).category_name = (data as any).categories.name;
+          }
           break;
         case 'customers':
           data = await prisma.customers.findFirst({
@@ -113,11 +125,12 @@ export class SyncService {
           version: entry.record_version,
         });
       } else {
+        const isSoftDeleted = (data as any).deleted_at != null;
         changes.push({
           cursor: entry.cursor,
           entityName: entry.entity_name,
           recordId: entry.record_id,
-          operation: entry.operation,
+          operation: isSoftDeleted ? 'DELETE' : entry.operation,
           data,
           version: entry.record_version,
         });
@@ -157,11 +170,14 @@ export class SyncService {
     };
   }
 
-  async pushChanges(businessId: string, data: SyncPushBody) {
+  async pushChanges(businessId: string, verifiedDeviceId: string | undefined, data: SyncPushBody) {
     const results: any[] = [];
+    const effectiveDeviceId = verifiedDeviceId || data.deviceId;
 
     for (const item of data.items) {
       try {
+        logger.info(`[SyncPush] Business=${businessId} Device=${effectiveDeviceId || 'unknown'} Entity=${item.entityName} Op=${item.operation} ID=${item.recordId}`);
+
         switch (item.entityName) {
           case 'customers': {
             const p = item.payload;
@@ -194,17 +210,25 @@ export class SyncService {
           }
           case 'products': {
             const p = item.payload;
-            // Check conflict if updating
+            // Check conflict if updating with a specified non-zero client version
             const existing = await prisma.products.findFirst({
               where: { id: item.recordId, business_id: businessId },
             });
-            if (existing && item.clientVersion !== undefined && existing.server_version && existing.server_version > BigInt(item.clientVersion)) {
+            const clientVer = item.clientVersion !== undefined && item.clientVersion !== null ? BigInt(item.clientVersion) : null;
+            if (
+              existing &&
+              item.operation === 'UPDATE' &&
+              clientVer !== null &&
+              clientVer > 0n &&
+              existing.server_version &&
+              existing.server_version > clientVer
+            ) {
               // Conflict detected!
-              if (data.deviceId) {
+              if (effectiveDeviceId) {
                 await prisma.sync_conflicts.create({
                   data: {
                     id: randomUUID(),
-                    device_id: data.deviceId,
+                    device_id: effectiveDeviceId,
                     entity_name: 'products',
                     record_id: item.recordId,
                     client_payload: item.payload,
@@ -223,7 +247,57 @@ export class SyncService {
             }
 
             if (item.operation === 'INSERT' || item.operation === 'UPDATE') {
-              await prisma.products.upsert({
+              // Validate categoryId: Ensure category belongs to this business in PostgreSQL to avoid FK violation
+              let resolvedCategoryId: string | null = null;
+              if (p.categoryId) {
+                const catById = await prisma.categories.findFirst({
+                  where: { id: p.categoryId, business_id: businessId, deleted_at: null },
+                });
+                if (catById) {
+                  resolvedCategoryId = catById.id;
+                } else {
+                  // Fallback: check if a category with the same name exists in this business (case-insensitive)
+                  const catName = p.categoryName || p.category_name;
+                  if (catName) {
+                    const catByName = await prisma.categories.findFirst({
+                      where: {
+                        name: { equals: catName, mode: 'insensitive' },
+                        business_id: businessId,
+                        deleted_at: null,
+                      },
+                    });
+                    if (catByName) {
+                      resolvedCategoryId = catByName.id;
+                    } else {
+                      // Category was created on device but hasn't reached PostgreSQL yet:
+                      // Create it to preserve category relationship across all devices
+                      try {
+                        const newCat = await prisma.categories.create({
+                          data: {
+                            id: p.categoryId,
+                            business_id: businessId,
+                            name: catName,
+                            is_active: true,
+                          },
+                        });
+                        resolvedCategoryId = newCat.id;
+                        logger.info(`[SyncPush:Product] Auto-created category "${catName}" (${p.categoryId}) for business ${businessId}`);
+                      } catch (catErr: any) {
+                        // Check if created concurrently
+                        const existingCat = await prisma.categories.findFirst({
+                          where: { id: p.categoryId, business_id: businessId },
+                        });
+                        if (existingCat) resolvedCategoryId = existingCat.id;
+                      }
+                    }
+                  }
+                }
+                if (!resolvedCategoryId) {
+                  logger.warn(`[SyncPush:Product] Category ${p.categoryId} not found for business ${businessId}. Setting category_id to null.`);
+                }
+              }
+
+              const savedProduct = await prisma.products.upsert({
                 where: {
                   business_id_id: {
                     business_id: businessId,
@@ -231,6 +305,7 @@ export class SyncService {
                   },
                 },
                 update: {
+                  category_id: resolvedCategoryId,
                   name: p.name,
                   code: p.code,
                   description: p.description,
@@ -240,10 +315,12 @@ export class SyncService {
                   is_tax_inclusive: p.isTaxInclusive ?? true,
                   unit: p.unit ?? 'plate',
                   is_available: p.isAvailable ?? true,
+                  deleted_at: null,
                 },
                 create: {
                   id: item.recordId,
                   business_id: businessId,
+                  category_id: resolvedCategoryId,
                   name: p.name,
                   code: p.code,
                   description: p.description,
@@ -254,6 +331,17 @@ export class SyncService {
                   unit: p.unit ?? 'plate',
                   is_available: p.isAvailable ?? true,
                 },
+              });
+              results.push({
+                recordId: item.recordId,
+                status: 'synced',
+                entity: 'products',
+                serverVersion: savedProduct.server_version?.toString(),
+              });
+            } else if (item.operation === 'DELETE') {
+              await prisma.products.updateMany({
+                where: { id: item.recordId, business_id: businessId },
+                data: { deleted_at: new Date(), is_available: false },
               });
               results.push({ recordId: item.recordId, status: 'synced', entity: 'products' });
             }
@@ -261,8 +349,9 @@ export class SyncService {
           }
           case 'categories': {
             const p = item.payload;
+            const safeColor = p.colorValue !== undefined && p.colorValue !== null ? (Number(p.colorValue) | 0) : null;
             if (item.operation === 'INSERT' || item.operation === 'UPDATE') {
-              await prisma.categories.upsert({
+              const savedCat = await prisma.categories.upsert({
                 where: {
                   business_id_id: {
                     business_id: businessId,
@@ -272,21 +361,27 @@ export class SyncService {
                 update: {
                   name: p.name,
                   icon: p.icon,
-                  color_value: p.colorValue,
+                  color_value: safeColor,
                   is_active: p.isActive ?? true,
                   display_order: p.displayOrder ?? 0,
+                  deleted_at: null,
                 },
                 create: {
                   id: item.recordId,
                   business_id: businessId,
                   name: p.name,
                   icon: p.icon,
-                  color_value: p.colorValue,
+                  color_value: safeColor,
                   is_active: p.isActive ?? true,
                   display_order: p.displayOrder ?? 0,
                 },
               });
-              results.push({ recordId: item.recordId, status: 'synced', entity: 'categories' });
+              results.push({
+                recordId: item.recordId,
+                status: 'synced',
+                entity: 'categories',
+                serverVersion: savedCat.server_version?.toString(),
+              });
             } else if (item.operation === 'DELETE') {
               await prisma.categories.updateMany({
                 where: { id: item.recordId, business_id: businessId },
@@ -356,6 +451,10 @@ export class SyncService {
             break;
         }
       } catch (err: any) {
+        logger.error(`[SyncPushError] Business=${businessId} Entity=${item.entityName} ID=${item.recordId} Error=${err.message}`, {
+          stack: err.stack,
+          payload: item.payload,
+        });
         results.push({ recordId: item.recordId, status: 'error', error: err.message });
       }
     }
