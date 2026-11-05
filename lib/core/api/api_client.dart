@@ -35,8 +35,15 @@ class ApiClient {
 
   ApiClient(this._db, [http.Client? client]) : _client = client ?? http.Client();
 
-  /// Default API URL depending on host platform
+  /// Production Render backend URL by default, with local fallback or user override
+  static const String productionApiUrl = 'https://foodbill-backend.onrender.com/api/v1';
+
+  /// Default API URL depending on host platform and build mode
   static String get defaultBaseUrl {
+    // If running in production release APK, point to Render production backend
+    if (const bool.fromEnvironment('dart.vm.product')) {
+      return productionApiUrl;
+    }
     if (kIsWeb) return 'http://127.0.0.1:3000/api/v1';
     if (Platform.isAndroid) return 'http://10.0.2.2:3000/api/v1'; // Android emulator localhost alias
     return 'http://127.0.0.1:3000/api/v1';
