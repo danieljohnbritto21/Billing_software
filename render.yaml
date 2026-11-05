@@ -29,6 +29,6 @@ services:
 databases:
   - name: foodbill-db
     databaseName: foodbill
-    user: foodbill_app
+    user: foodbill_user
     plan: starter
-    postgresMajorVersion: 16
+    postgresMajorVersion: 18
