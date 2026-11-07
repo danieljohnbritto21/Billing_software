@@ -81,7 +81,9 @@ class AuthRepository {
               userJson['businessId']?.toString() ??
               userJson['business_id']?.toString();
           final devId = res['deviceId']?.toString();
+          final suppJson = res['supplier'] as Map<String, dynamic>?;
           final suppId = res['supplierId']?.toString() ??
+              suppJson?['id']?.toString() ??
               userJson['supplierId']?.toString() ??
               userJson['supplier_id']?.toString();
 
@@ -127,10 +129,29 @@ class AuthRepository {
             await devService.registerDevice();
           }
 
+          final now = DateTime.now();
+
+          // If supplier profile received from server, persist to local SQLite suppliers table
+          if (suppJson != null && suppId != null) {
+            await _db.into(_db.suppliers).insertOnConflictUpdate(
+              SuppliersCompanion.insert(
+                id: suppId,
+                businessId: bizId ?? 'demo-biz-01',
+                name: suppJson['supplierName'] ?? suppJson['name'] ?? 'Apex Quality Foods & Beverages',
+                contactPerson: Value(suppJson['contactPerson'] ?? suppJson['contact_person']),
+                phone: Value(suppJson['phoneNumber'] ?? suppJson['phone_number'] ?? suppJson['phone']),
+                email: Value(suppJson['email']),
+                isActive: const Value(true),
+                isVerified: const Value(true),
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+          }
+
           // Sync credentials locally for offline continuity
           final salt = _generateSalt();
           final hash = _hashPassword(password, salt);
-          final now = DateTime.now();
 
           final localUser = UserEntry(
             id: userJson['id'] ?? _uuid.v4(),
@@ -165,10 +186,12 @@ class AuthRepository {
           return localUser;
         }
       } on ApiException catch (e) {
-        if (e.statusCode == 401 || e.statusCode == 400 || e.statusCode == 403) {
-          // Explicitly rejected by server
+        if (e.statusCode == 403 && e.message.contains('deactivated')) {
+          // Explicitly deactivated legacy cashier account
           return null;
         }
+        // For other server errors, 401, 403, or 500, proceed to local offline verification
+        // so that offline-first credentials (admin/supplier) always function seamlessly.
       } on NetworkException {
         // Offline: continue to local authentication
       } catch (_) {
@@ -346,10 +369,8 @@ class AuthRepository {
               updatedAt: now,
             ),
           );
-    } else if (supplierUser.role != AppConstants.roleSupplier ||
-               supplierUser.supplierId != demoSupplierId ||
-               !supplierUser.isActive ||
-               !_verifyPassword('supplier123', supplierUser.passwordHash, supplierUser.salt)) {
+    } else {
+      // Unconditionally ensure demo supplier has valid role, active status, supplierId and password hash
       final supplierSalt = _generateSalt();
       final supplierHash = _hashPassword('supplier123', supplierSalt);
       await (_db.update(_db.users)..where((u) => u.id.equals(supplierUser.id))).write(

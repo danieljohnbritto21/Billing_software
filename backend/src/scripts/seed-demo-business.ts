@@ -82,7 +82,7 @@ export async function ensureDemoSupplier(businessId: string) {
         supplier_id: supplier.id,
         username: DEMO_SUPPLIER_USERNAME,
         full_name: 'Rajesh Kumar (Apex Foods)',
-        role_id: 'supplier',
+        role_id: 'SUPPLIER',
         password_hash: supplierPasswordHash,
         salt: supplierSalt,
         is_active: true,

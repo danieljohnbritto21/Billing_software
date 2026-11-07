@@ -50,9 +50,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     if (success && mounted) {
       final user = ref.read(authProvider).user;
-      if (user?.role == AppConstants.roleSupplier) {
+      final role = user?.role.toLowerCase();
+      if (_isSupplierPortal || role == AppConstants.roleSupplier || user?.supplierId != null) {
         context.go('/supplier/dashboard');
-      } else if (user?.role == AppConstants.roleAdmin) {
+      } else if (role == AppConstants.roleAdmin) {
         context.go('/dashboard');
       } else {
         context.go('/billing');
