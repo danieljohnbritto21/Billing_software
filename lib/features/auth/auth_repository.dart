@@ -62,12 +62,16 @@ class AuthRepository {
         final devName = await _deviceService?.getDeviceName();
 
         final endpoint = isSupplier ? '/auth/supplier-login' : '/auth/login';
-        final res = await api.post(endpoint, body: {
-          'username': cleanUsername,
-          'password': password,
-          if (devUid != null) 'deviceUid': devUid,
-          if (devName != null) 'deviceName': devName,
-        });
+        final res = await api.post(
+          endpoint,
+          body: {
+            'username': cleanUsername,
+            'password': password,
+            if (devUid != null) 'deviceUid': devUid,
+            if (devName != null) 'deviceName': devName,
+          },
+          timeout: const Duration(seconds: 5),
+        );
 
         if (res is Map<String, dynamic> && res['token'] != null) {
           final token = res['token'].toString();
@@ -173,6 +177,9 @@ class AuthRepository {
     }
 
     // 2. Offline fallback: Authenticate against local Users table
+    // Guarantee that default seed accounts (admin & demo supplier) exist in SQLite
+    await seedInitialUsersIfEmpty();
+
     final query = _db.select(_db.users)
       ..where((u) {
         final baseFilter = u.username.lower().equals(cleanUsername) & u.isActive.equals(true);

@@ -46,7 +46,7 @@ class ApiClient {
       return productionApiUrl;
     }
     if (kIsWeb) return 'http://127.0.0.1:3000/api/v1';
-    if (Platform.isAndroid) return 'http://10.0.2.2:3000/api/v1'; // Android emulator localhost alias
+    if (Platform.isAndroid) return productionApiUrl; // Default to production Render API so physical Android phones work out-of-the-box!
     return 'http://127.0.0.1:3000/api/v1';
   }
 
@@ -215,7 +215,7 @@ class ApiClient {
     }
   }
 
-  Future<dynamic> post(String path, {dynamic body, String? idempotencyKey}) async {
+  Future<dynamic> post(String path, {dynamic body, String? idempotencyKey, Duration? timeout}) async {
     final base = await getBaseUrl();
     final uri = Uri.parse('$base$path');
 
@@ -226,7 +226,7 @@ class ApiClient {
             headers: await _headers(idempotencyKey: idempotencyKey),
             body: body != null ? jsonEncode(body) : null,
           )
-          .timeout(const Duration(seconds: 25));
+          .timeout(timeout ?? const Duration(seconds: 25));
       return _handleResponse(response);
     } on SocketException catch (e) {
       throw NetworkException('Connection failed: ${e.message}');
