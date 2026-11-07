@@ -58,7 +58,7 @@ invoicesRouter.get(
 invoicesRouter.post(
   '/',
   requireAuth,
-  requireRole('cashier'),
+  requireRole('ADMIN'),
   validateBody(createInvoiceSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -78,7 +78,7 @@ invoicesRouter.post(
 invoicesRouter.post(
   '/:id/items',
   requireAuth,
-  requireRole('cashier'),
+  requireRole('ADMIN'),
   validateBody(addInvoiceItemSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -97,7 +97,7 @@ invoicesRouter.post(
 invoicesRouter.delete(
   '/:id/items/:itemId',
   requireAuth,
-  requireRole('cashier'),
+  requireRole('ADMIN'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const result = await invoicesService.removeItemFromInvoice(
@@ -115,7 +115,7 @@ invoicesRouter.delete(
 invoicesRouter.post(
   '/:id/finalize',
   requireAuth,
-  requireRole('cashier'),
+  requireRole('ADMIN'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const finalized = await invoicesService.finalizeInvoice(

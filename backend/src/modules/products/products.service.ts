@@ -9,54 +9,131 @@ import { CreateProductInput, UpdateProductInput, UploadProductImageInput } from 
 export class ProductsService {
   async listProducts(
     businessId: string,
-    options?: { categoryId?: string; search?: string; availableOnly?: boolean }
+    options?: {
+      categoryId?: string;
+      supplierId?: string;
+      search?: string;
+      availableOnly?: boolean;
+      page?: number;
+      limit?: number;
+    }
   ) {
-    return prisma.products.findMany({
-      where: {
-        business_id: businessId,
-        deleted_at: null,
-        ...(options?.categoryId ? { category_id: options.categoryId } : {}),
-        ...(options?.availableOnly ? { is_available: true } : {}),
-        ...(options?.search
-          ? {
-              OR: [
-                { name: { contains: options.search, mode: 'insensitive' } },
-                { code: { contains: options.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      include: {
-        categories: {
-          select: { id: true, name: true, icon: true },
+    const page = options?.page ? Math.max(1, Number(options.page)) : undefined;
+    const limit = options?.limit ? Math.min(100, Math.max(1, Number(options.limit))) : undefined;
+    const skip = page && limit ? (page - 1) * limit : undefined;
+
+    const where: any = {
+      business_id: businessId,
+      deleted_at: null,
+      ...(options?.categoryId ? { category_id: options.categoryId } : {}),
+      ...(options?.supplierId ? { supplier_id: options.supplierId } : {}),
+      ...(options?.availableOnly ? { is_available: true } : {}),
+      ...(options?.search
+        ? {
+            OR: [
+              { name: { contains: options.search, mode: 'insensitive' } },
+              { code: { contains: options.search, mode: 'insensitive' } },
+              { description: { contains: options.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      prisma.products.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          categories: {
+            select: { id: true, name: true, icon: true },
+          },
+          suppliers: {
+            select: { id: true, supplier_code: true, supplier_name: true },
+          },
+          product_images: {
+            where: { deleted_at: null },
+            select: { id: true, file_name: true, is_primary: true },
+          },
         },
-      },
-      orderBy: { name: 'asc' },
-    });
+        orderBy: { name: 'asc' },
+      }),
+      prisma.products.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page: page || 1,
+      limit: limit || total,
+    };
   }
 
-  async getProductById(businessId: string, id: string) {
+  async getProductById(businessId: string, id: string, enforcedSupplierId?: string) {
+    const where: any = {
+      id,
+      business_id: businessId,
+      deleted_at: null,
+    };
+    if (enforcedSupplierId) {
+      where.supplier_id = enforcedSupplierId;
+    }
+
     const product = await prisma.products.findFirst({
-      where: { id, business_id: businessId, deleted_at: null },
+      where,
       include: {
         categories: true,
-        product_images: true,
+        suppliers: {
+          select: { id: true, supplier_code: true, supplier_name: true, contact_person: true },
+        },
+        product_images: {
+          where: { deleted_at: null },
+        },
       },
     });
+
     if (!product) {
-      throw new AppError(404, 'Product not found');
+      throw new AppError(404, 'Product not found or access denied');
     }
     return product;
   }
 
-  async createProduct(businessId: string, data: CreateProductInput) {
-    if (data.categoryId) {
+  async createProduct(businessId: string, data: CreateProductInput, enforcedSupplierId?: string) {
+    // 1. Validate Category (must belong to this business and be active)
+    let categoryId = data.categoryId;
+    if (categoryId) {
       const category = await prisma.categories.findFirst({
-        where: { id: data.categoryId, business_id: businessId, deleted_at: null },
+        where: { id: categoryId, business_id: businessId, deleted_at: null },
       });
       if (!category) {
         throw new AppError(400, 'Invalid category: category does not exist or belongs to another business.');
       }
+      if (enforcedSupplierId && !category.is_active) {
+        throw new AppError(400, 'Selected category is inactive.');
+      }
+    }
+
+    // 2. Resolve Supplier ID
+    let supplierId: string;
+    if (enforcedSupplierId) {
+      supplierId = enforcedSupplierId;
+    } else if (data.supplierId) {
+      const supplier = await prisma.suppliers.findFirst({
+        where: { id: data.supplierId, business_id: businessId, deleted_at: null },
+      });
+      if (!supplier) {
+        throw new AppError(400, 'Invalid supplier: supplier does not exist or belongs to another business.');
+      }
+      supplierId = supplier.id;
+    } else {
+      // Default to in-house supplier
+      const defaultSupplier = await prisma.suppliers.findFirst({
+        where: { business_id: businessId, supplier_code: 'SUP-DEFAULT' },
+      });
+      if (!defaultSupplier) {
+        throw new AppError(500, 'No default supplier found for this business.');
+      }
+      supplierId = defaultSupplier.id;
     }
 
     const id = data.id || randomUUID();
@@ -64,10 +141,11 @@ export class ProductsService {
       data: {
         id,
         business_id: businessId,
-        category_id: data.categoryId,
-        name: data.name,
-        code: data.code,
-        description: data.description,
+        category_id: categoryId,
+        supplier_id: supplierId,
+        name: data.name.trim(),
+        code: data.code?.trim(),
+        description: data.description?.trim(),
         cost_price_paise: BigInt(data.costPricePaise ?? 0),
         selling_price_paise: BigInt(data.sellingPricePaise),
         gst_rate_percent: data.gstRatePercent ?? 0,
@@ -76,28 +154,56 @@ export class ProductsService {
         is_available: data.isAvailable ?? true,
         image_path: data.imagePath,
       },
+      include: {
+        categories: true,
+        suppliers: {
+          select: { id: true, supplier_code: true, supplier_name: true },
+        },
+      },
     });
   }
 
-  async updateProduct(businessId: string, id: string, data: UpdateProductInput) {
-    await this.getProductById(businessId, id);
+  async updateProduct(
+    businessId: string,
+    id: string,
+    data: UpdateProductInput,
+    enforcedSupplierId?: string
+  ) {
+    const existing = await this.getProductById(businessId, id, enforcedSupplierId);
 
-    if (data.categoryId) {
+    // Validate Category if changing
+    if (data.categoryId !== undefined && data.categoryId !== null) {
       const category = await prisma.categories.findFirst({
         where: { id: data.categoryId, business_id: businessId, deleted_at: null },
       });
       if (!category) {
         throw new AppError(400, 'Invalid category: category does not exist or belongs to another business.');
       }
+      if (enforcedSupplierId && !category.is_active) {
+        throw new AppError(400, 'Selected category is inactive.');
+      }
+    }
+
+    // Suppliers cannot change supplier_id; Admin can update supplier_id
+    let supplierIdToSet = undefined;
+    if (!enforcedSupplierId && data.supplierId !== undefined) {
+      const supplier = await prisma.suppliers.findFirst({
+        where: { id: data.supplierId, business_id: businessId, deleted_at: null },
+      });
+      if (!supplier) {
+        throw new AppError(400, 'Invalid supplier: supplier does not exist or belongs to another business.');
+      }
+      supplierIdToSet = supplier.id;
     }
 
     return prisma.products.update({
       where: { id },
       data: {
         ...(data.categoryId !== undefined ? { category_id: data.categoryId } : {}),
-        ...(data.name ? { name: data.name } : {}),
-        ...(data.code !== undefined ? { code: data.code } : {}),
-        ...(data.description !== undefined ? { description: data.description } : {}),
+        ...(supplierIdToSet !== undefined ? { supplier_id: supplierIdToSet } : {}),
+        ...(data.name ? { name: data.name.trim() } : {}),
+        ...(data.code !== undefined ? { code: data.code?.trim() || null } : {}),
+        ...(data.description !== undefined ? { description: data.description?.trim() || null } : {}),
         ...(data.costPricePaise !== undefined ? { cost_price_paise: BigInt(data.costPricePaise) } : {}),
         ...(data.sellingPricePaise !== undefined ? { selling_price_paise: BigInt(data.sellingPricePaise) } : {}),
         ...(data.gstRatePercent !== undefined ? { gst_rate_percent: data.gstRatePercent } : {}),
@@ -106,11 +212,40 @@ export class ProductsService {
         ...(data.isAvailable !== undefined ? { is_available: data.isAvailable } : {}),
         ...(data.imagePath !== undefined ? { image_path: data.imagePath } : {}),
       },
+      include: {
+        categories: true,
+        suppliers: {
+          select: { id: true, supplier_code: true, supplier_name: true },
+        },
+      },
     });
   }
 
-  async softDeleteProduct(businessId: string, id: string) {
-    await this.getProductById(businessId, id);
+  async updateProductStatus(
+    businessId: string,
+    id: string,
+    isAvailable: boolean,
+    enforcedSupplierId?: string
+  ) {
+    await this.getProductById(businessId, id, enforcedSupplierId);
+    return prisma.products.update({
+      where: { id },
+      data: { is_available: isAvailable },
+    });
+  }
+
+  async softDeleteProduct(businessId: string, id: string, enforcedSupplierId?: string) {
+    await this.getProductById(businessId, id, enforcedSupplierId);
+
+    // Check if historical sales or purchases reference this product
+    const [salesCount, invoiceCount, poCount, piCount] = await Promise.all([
+      prisma.order_items.count({ where: { product_id: id } }),
+      prisma.invoice_items.count({ where: { product_id: id } }),
+      prisma.purchase_order_items.count({ where: { product_id: id } }),
+      prisma.purchase_invoice_items.count({ where: { product_id: id } }),
+    ]);
+
+    // Always soft-delete to preserve snapshot referential integrity
     return prisma.products.update({
       where: { id },
       data: {

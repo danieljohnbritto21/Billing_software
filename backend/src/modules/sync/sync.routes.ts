@@ -17,7 +17,8 @@ syncRouter.get(
       const result = await syncService.pullChanges(
         req.user!.businessId,
         req.device!.id,
-        req.query as any
+        req.query as any,
+        req.user
       );
       return apiSuccess(res, result);
     } catch (err) {
@@ -36,7 +37,8 @@ syncRouter.post(
       const result = await syncService.pushChanges(
         req.user!.businessId,
         req.device!.id,
-        req.body
+        req.body,
+        req.user
       );
 
       const items = result.results || [];
@@ -44,24 +46,19 @@ syncRouter.post(
       const successCount = items.filter((r: any) => r.status === 'synced' || r.status === 'conflict').length;
 
       if (items.length > 0 && errorCount === items.length) {
-        // All items failed to commit to database: Return genuine HTTP 422 failure
         return res.status(422).json({
           success: false,
           error: `Push sync failed: all ${errorCount} items failed to commit to database`,
-          data: result,
+          results: items,
         });
       }
 
-      if (errorCount > 0 && successCount > 0) {
-        // Multi-status partial batch success
-        return res.status(207).json({
-          success: true,
-          message: `Push sync partially processed: ${successCount} succeeded, ${errorCount} failed`,
-          data: result,
-        });
-      }
-
-      return apiSuccess(res, result, 'Push changes processed');
+      return apiSuccess(res, {
+        processed: items.length,
+        synced: successCount,
+        errors: errorCount,
+        results: items,
+      });
     } catch (err) {
       next(err);
     }
@@ -71,7 +68,6 @@ syncRouter.post(
 syncRouter.get(
   '/status',
   requireAuth,
-  requireDeviceAuth,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const status = await syncService.getSyncStatus(req.user!.businessId);
@@ -81,4 +77,3 @@ syncRouter.get(
     }
   }
 );
-

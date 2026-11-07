@@ -240,9 +240,9 @@ class ThermalEscPosGenerator {
     ]);
     bytes += generator.text('Date: $formattedDate');
     bytes += generator.row([
-      PosColumn(text: 'Order Type: ${details.invoice.orderType.toUpperCase()}', width: 7, styles: const PosStyles(bold: true)),
+      PosColumn(text: 'Order Type: ${details.invoice.orderType.toUpperCase()}', width: 6, styles: const PosStyles(bold: true)),
       if (isDineIn && hasTable)
-        PosColumn(text: 'Table: ${details.invoice.tableNumber!.trim()}', width: 5, styles: const PosStyles(align: PosAlign.right, bold: true, height: PosTextSize.size2, width: PosTextSize.size2)),
+        PosColumn(text: 'Table: ${details.invoice.tableNumber!.trim()}', width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
     ]);
     if (hasCustomerName) {
       bytes += generator.text('Customer: ${details.invoice.customerName!.trim()}');

@@ -182,6 +182,35 @@ class ScaffoldWithNavBar extends ConsumerWidget {
                           letterSpacing: -0.3,
                         ),
                       ),
+                      const SizedBox(width: 16),
+                      // Quick Admin Shortcuts for Procurement & Suppliers
+                      TextButton.icon(
+                        onPressed: () => context.push('/suppliers'),
+                        icon: const Icon(Icons.business_outlined, size: 16),
+                        label: const Text('Suppliers', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppTheme.primaryGreen,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => context.push('/purchases/orders'),
+                        icon: const Icon(Icons.shopping_bag_outlined, size: 16),
+                        label: const Text('Purchase Orders', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.indigo.shade700,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => context.push('/purchases/invoices'),
+                        icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                        label: const Text('Vendor Bills', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.teal.shade700,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        ),
+                      ),
                       const Spacer(),
                       // Active User Profile & Role Badge
                       Container(

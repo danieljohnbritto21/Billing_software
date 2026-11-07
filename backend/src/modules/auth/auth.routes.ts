@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authService } from './auth.service';
 import { validateBody } from '../../middleware/validate.middleware';
-import { registerBusinessSchema, loginSchema } from './auth.schema';
+import { registerBusinessSchema, loginSchema, supplierLoginSchema } from './auth.schema';
 import { requireAuth } from '../../middleware/auth.middleware';
 import { apiSuccess } from '../../utils/response';
 
@@ -27,6 +27,19 @@ authRouter.post(
     try {
       const result = await authService.login(req.body);
       return apiSuccess(res, result, 'Login successful');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+authRouter.post(
+  '/supplier-login',
+  validateBody(supplierLoginSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await authService.supplierLogin(req.body);
+      return apiSuccess(res, result, 'Supplier login successful');
     } catch (err) {
       next(err);
     }

@@ -86,10 +86,14 @@ class InvoiceRepository {
 
   InvoiceRepository(this._db, [this._sync]);
 
-  /// Generates the next sequential invoice number like "INV-000001"
-  Future<String> generateNextInvoiceNumber({String prefix = 'INV-'}) async {
+  /// Generates the next sequential invoice number like "INV-000001" or collision-resistant "INV-D1-00001"
+  Future<String> generateNextInvoiceNumber({String prefix = 'INV-', String? deviceCode}) async {
+    final effectivePrefix = (deviceCode != null && deviceCode.trim().isNotEmpty)
+        ? (prefix.endsWith('-') ? '$prefix${deviceCode.trim()}-' : '$prefix-${deviceCode.trim()}-')
+        : prefix;
+
     final query = _db.select(_db.invoices)
-      ..where((t) => t.invoiceNumber.like('$prefix%'))
+      ..where((t) => t.invoiceNumber.like('$effectivePrefix%'))
       ..orderBy([
         (t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
       ])
@@ -97,14 +101,17 @@ class InvoiceRepository {
 
     final last = await query.getSingleOrNull();
     if (last == null) {
-      return '${prefix}000001';
+      return (deviceCode != null && deviceCode.trim().isNotEmpty)
+          ? '${effectivePrefix}00001'
+          : '${effectivePrefix}000001';
     }
 
-    final currentNumStr = last.invoiceNumber.replaceFirst(prefix, '');
+    final currentNumStr = last.invoiceNumber.replaceFirst(effectivePrefix, '');
     final currentNum = int.tryParse(currentNumStr) ?? 0;
     final nextNum = currentNum + 1;
-    final padded = nextNum.toString().padLeft(6, '0');
-    return '$prefix$padded';
+    final padLength = (deviceCode != null && deviceCode.trim().isNotEmpty) ? 5 : 6;
+    final padded = nextNum.toString().padLeft(padLength, '0');
+    return '$effectivePrefix$padded';
   }
 
   /// Atomically creates an invoice with all its snapshot items,
@@ -162,26 +169,70 @@ class InvoiceRepository {
     if (sync != null) {
       final createdInv = await getInvoiceById(invoiceId);
       if (createdInv != null) {
-        sync.enqueueChange(
+        await sync.enqueueChange(
           entityName: 'invoices',
           recordId: invoiceId,
           operation: 'INSERT',
+          idempotencyKey: invoiceId,
           payload: {
             'id': invoiceId,
+            'idempotencyKey': invoiceId,
+            'deviceId': createdInv.deviceId,
             'invoiceNumber': createdInv.invoiceNumber,
             'orderType': createdInv.orderType,
             'orderStatus': createdInv.orderStatus,
             'paymentStatus': createdInv.paymentStatus,
+            'paymentMethod': createdInv.paymentMethod,
             'customerName': createdInv.customerName,
             'customerPhone': createdInv.customerPhone,
             'tableNumber': createdInv.tableNumber,
             'deliveryAddress': createdInv.deliveryAddress,
             'subtotalPaise': createdInv.subtotalPaise,
+            'itemDiscountTotalPaise': createdInv.itemDiscountTotalPaise,
+            'billDiscountPaise': createdInv.billDiscountPaise,
             'taxableAmountPaise': createdInv.taxableAmountPaise,
+            'cgstPaise': createdInv.cgstPaise,
+            'sgstPaise': createdInv.sgstPaise,
+            'igstPaise': createdInv.igstPaise,
+            'roundOffPaise': createdInv.roundOffPaise,
             'grandTotalPaise': createdInv.grandTotalPaise,
             'paidAmountPaise': createdInv.paidAmountPaise,
-            'idempotencyKey': invoiceId,
-            'notes': params.billNote,
+            'billNote': params.billNote,
+            'createdAt': createdInv.createdAt.toIso8601String(),
+            'items': params.items.map((i) => {
+              'id': i.id.value,
+              'productId': i.productId.present ? i.productId.value : null,
+              'productName': i.productName.value,
+              'productCode': i.productCode.present ? i.productCode.value : null,
+              'unit': i.unit.present ? i.unit.value : 'plate',
+              'unitPricePaise': i.unitPricePaise.value,
+              'quantity': i.quantity.value,
+              'discountPaise': i.discountPaise.present ? i.discountPaise.value : 0,
+              'gstRatePercent': i.gstRatePercent.present ? i.gstRatePercent.value : 0.0,
+              'isTaxInclusive': i.isTaxInclusive.present ? i.isTaxInclusive.value : true,
+              'taxableAmountPaise': i.taxableAmountPaise.value,
+              'taxAmountPaise': i.taxAmountPaise.value,
+              'totalAmountPaise': i.totalAmountPaise.value,
+            }).toList(),
+          },
+        );
+      }
+
+      if (params.payment != null) {
+        final pay = params.payment!;
+        await sync.enqueueChange(
+          entityName: 'payments',
+          recordId: pay.id.value,
+          operation: 'INSERT',
+          idempotencyKey: pay.id.value,
+          payload: {
+            'id': pay.id.value,
+            'invoiceId': pay.invoiceId.value,
+            'amountPaise': pay.amountPaise.value,
+            'paymentMethod': pay.paymentMethod.value,
+            'referenceNumber': pay.referenceNumber.present ? pay.referenceNumber.value : null,
+            'notes': pay.notes.present ? pay.notes.value : null,
+            'idempotencyKey': pay.id.value,
           },
         );
       }
@@ -194,6 +245,7 @@ class InvoiceRepository {
   /// ensuring NO duplicate invoices are created and keeping order items synchronized atomically.
   Future<String> saveOrUpdatePendingOrder({
     String? existingInvoiceId,
+    String? deviceId,
     required String? invoiceNumber,
     required String? customerName,
     required String? customerPhone,
@@ -236,47 +288,55 @@ class InvoiceRepository {
             sgstPaise: Value(sgstPaise),
             roundOffPaise: Value(roundOffPaise),
             grandTotalPaise: Value(grandTotalPaise),
-            orderStatus: const Value(AppConstants.orderPending),
-            paymentStatus: const Value(AppConstants.statusPending),
           ),
         );
 
-        // Delete previous items to replace with updated snapshot
+        // Delete old items to replace with updated snapshot list
         await (_db.delete(_db.invoiceItems)..where((t) => t.invoiceId.equals(invoiceId))).go();
       } else {
-        // Create new pending order
         invoiceId = _uuid.v4();
-        final invNum = invoiceNumber ?? await generateNextInvoiceNumber();
-
+        // Insert brand new pending invoice
         await _db.into(_db.invoices).insert(
           InvoicesCompanion.insert(
             id: invoiceId,
-            invoiceNumber: invNum,
+            invoiceNumber: invoiceNumber ?? 'ORD-000000',
             createdAt: now,
             customerName: Value(customerName),
             customerPhone: Value(customerPhone),
-            orderType: Value(orderType),
-            tableNumber: Value(tableNumber),
-            deliveryAddress: Value(deliveryAddress),
             subtotalPaise: subtotalPaise,
             itemDiscountTotalPaise: Value(itemDiscountTotalPaise),
             billDiscountPaise: Value(billDiscountPaise),
             taxableAmountPaise: taxableAmountPaise,
             cgstPaise: Value(cgstPaise),
             sgstPaise: Value(sgstPaise),
+            igstPaise: const Value(0),
             roundOffPaise: Value(roundOffPaise),
             grandTotalPaise: grandTotalPaise,
-            paidAmountPaise: 0,
-            paymentMethod: const Value(AppConstants.paymentCash),
+            paymentMethod: const Value('Pending'),
             paymentStatus: const Value(AppConstants.statusPending),
+            paidAmountPaise: 0,
             orderStatus: const Value(AppConstants.orderPending),
+            orderType: Value(orderType),
+            tableNumber: Value(tableNumber),
+            deliveryAddress: Value(deliveryAddress),
+            deviceId: Value(deviceId),
             cashierId: Value(cashierId),
             cashierName: Value(cashierName),
           ),
         );
+
+        // If Dine In, mark table occupied
+        if (orderType.toLowerCase() == 'dine in' && tableNumber != null && tableNumber.isNotEmpty) {
+          await (_db.update(_db.diningTables)..where((t) => t.name.equals(tableNumber.trim()))).write(
+            DiningTablesCompanion(
+              isOccupied: const Value(true),
+              currentInvoiceId: Value(invoiceId),
+            ),
+          );
+        }
       }
 
-      // Re-insert all line items with correct invoiceId
+      // Insert fresh snapshot items
       for (final item in items) {
         final companion = item.copyWith(invoiceId: Value(invoiceId));
         await _db.into(_db.invoiceItems).insert(companion);
@@ -312,6 +372,58 @@ class InvoiceRepository {
 
       return invoiceId;
     });
+
+    final sync = _sync;
+    if (sync != null) {
+      final createdInv = await getInvoiceById(finalInvoiceId);
+      if (createdInv != null) {
+        await sync.enqueueChange(
+          entityName: 'invoices',
+          recordId: finalInvoiceId,
+          operation: existingInvoiceId != null ? 'UPDATE' : 'INSERT',
+          idempotencyKey: finalInvoiceId,
+          payload: {
+            'id': finalInvoiceId,
+            'idempotencyKey': finalInvoiceId,
+            'deviceId': createdInv.deviceId,
+            'invoiceNumber': createdInv.invoiceNumber,
+            'orderType': createdInv.orderType,
+            'orderStatus': createdInv.orderStatus,
+            'paymentStatus': createdInv.paymentStatus,
+            'customerName': createdInv.customerName,
+            'customerPhone': createdInv.customerPhone,
+            'tableNumber': createdInv.tableNumber,
+            'deliveryAddress': createdInv.deliveryAddress,
+            'subtotalPaise': createdInv.subtotalPaise,
+            'itemDiscountTotalPaise': createdInv.itemDiscountTotalPaise,
+            'billDiscountPaise': createdInv.billDiscountPaise,
+            'taxableAmountPaise': createdInv.taxableAmountPaise,
+            'cgstPaise': createdInv.cgstPaise,
+            'sgstPaise': createdInv.sgstPaise,
+            'roundOffPaise': createdInv.roundOffPaise,
+            'grandTotalPaise': createdInv.grandTotalPaise,
+            'paidAmountPaise': createdInv.paidAmountPaise,
+            'billNote': billNote,
+            'createdAt': createdInv.createdAt.toIso8601String(),
+            'items': items.map((i) => {
+              'id': i.id.value,
+              'productId': i.productId.present ? i.productId.value : null,
+              'productName': i.productName.value,
+              'productCode': i.productCode.present ? i.productCode.value : null,
+              'unit': i.unit.present ? i.unit.value : 'plate',
+              'unitPricePaise': i.unitPricePaise.value,
+              'quantity': i.quantity.value,
+              'discountPaise': i.discountPaise.present ? i.discountPaise.value : 0,
+              'gstRatePercent': i.gstRatePercent.present ? i.gstRatePercent.value : 0.0,
+              'isTaxInclusive': i.isTaxInclusive.present ? i.isTaxInclusive.value : true,
+              'taxableAmountPaise': i.taxableAmountPaise.value,
+              'taxAmountPaise': i.taxAmountPaise.value,
+              'totalAmountPaise': i.totalAmountPaise.value,
+            }).toList(),
+          },
+        );
+      }
+    }
 
     return finalInvoiceId;
   }
@@ -372,7 +484,7 @@ class InvoiceRepository {
     });
 
     if (paymentId != null) {
-      _sync?.enqueueChange(
+      await _sync?.enqueueChange(
         entityName: 'payments',
         recordId: paymentId!,
         operation: 'INSERT',
@@ -388,6 +500,20 @@ class InvoiceRepository {
         },
       );
     }
+
+    await _sync?.enqueueChange(
+      entityName: 'invoices',
+      recordId: invoiceId,
+      operation: 'UPDATE',
+      idempotencyKey: 'update-comp-$invoiceId',
+      payload: {
+        'id': invoiceId,
+        'orderStatus': AppConstants.orderCompleted,
+        'paymentStatus': paidAmountPaise > 0 ? AppConstants.statusPaid : AppConstants.statusPending,
+        'paidAmountPaise': paidAmountPaise,
+        'paymentMethod': paymentMethod,
+      },
+    );
   }
 
   /// Records an additional payment against an invoice (e.g. collecting remaining due),
@@ -760,6 +886,20 @@ class InvoiceRepository {
         cancelledAt: Value(DateTime.now()),
         cancelReason: Value(reason),
       ),
+    );
+
+    _sync?.enqueueChange(
+      entityName: 'invoices',
+      recordId: invoiceId,
+      operation: 'UPDATE',
+      idempotencyKey: 'cancel-$invoiceId',
+      payload: {
+        'id': invoiceId,
+        'isCancelled': true,
+        'orderStatus': AppConstants.orderCancelled,
+        'paymentStatus': AppConstants.statusCancelled,
+        'cancelReason': reason,
+      },
     );
   }
 

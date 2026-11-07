@@ -1,10 +1,21 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { requireAuth, requireRole } from '../../middleware/auth.middleware';
+import {
+  requireAuth,
+  requireAdmin,
+  requireSupplier,
+  requireActiveUser,
+} from '../../middleware/auth.middleware';
 import { validateBody } from '../../middleware/validate.middleware';
-import { createProductSchema, updateProductSchema, uploadProductImageSchema } from './products.schema';
+import {
+  createProductSchema,
+  updateProductSchema,
+  updateProductStatusSchema,
+  uploadProductImageSchema,
+} from './products.schema';
 import { productsService } from './products.service';
-import { apiSuccess } from '../../utils/response';
+import { apiSuccess, apiPaginated } from '../../utils/response';
 
+// Legacy / General Products Router: mounted at /api/v1/products
 export const productsRouter = Router();
 
 productsRouter.get(
@@ -13,15 +24,17 @@ productsRouter.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const categoryId = req.query.categoryId as string | undefined;
+      const supplierId = req.query.supplierId as string | undefined;
       const search = req.query.search as string | undefined;
       const availableOnly = req.query.availableOnly === 'true';
 
-      const products = await productsService.listProducts(req.user!.businessId, {
+      const result = await productsService.listProducts(req.user!.businessId, {
         categoryId,
+        supplierId,
         search,
         availableOnly,
       });
-      return apiSuccess(res, products);
+      return apiSuccess(res, result.items);
     } catch (err) {
       next(err);
     }
@@ -58,11 +71,10 @@ productsRouter.get(
   }
 );
 
-// Cashier manages products per FoodBill Pro specifications
 productsRouter.post(
   '/',
   requireAuth,
-  requireRole('cashier'),
+  requireAdmin,
   validateBody(createProductSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -80,7 +92,7 @@ productsRouter.post(
 productsRouter.put(
   '/:id',
   requireAuth,
-  requireRole('cashier'),
+  requireAdmin,
   validateBody(updateProductSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -99,69 +111,207 @@ productsRouter.put(
 productsRouter.delete(
   '/:id',
   requireAuth,
-  requireRole('cashier'),
+  requireAdmin,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const deleted = await productsService.softDeleteProduct(
+      await productsService.softDeleteProduct(
         req.user!.businessId,
         req.params.id
       );
-      return apiSuccess(res, deleted, 'Product deleted successfully');
+      return apiSuccess(res, null, 'Product deleted successfully');
     } catch (err) {
       next(err);
     }
   }
 );
 
-productsRouter.get(
-  '/:id/images',
-  requireAuth,
+// Admin Products Router: mounted at /api/v1/admin/products
+export const adminProductsRouter = Router();
+
+adminProductsRouter.use(requireAuth, requireActiveUser, requireAdmin);
+
+adminProductsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const categoryId = req.query.categoryId as string | undefined;
+    const supplierId = req.query.supplierId as string | undefined;
+    const search = req.query.search as string | undefined;
+    const availableOnly = req.query.availableOnly === 'true';
+
+    const result = await productsService.listProducts(req.user!.businessId, {
+      categoryId,
+      supplierId,
+      search,
+      availableOnly,
+      page: req.query.page ? Number(req.query.page) : undefined,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    });
+    return apiPaginated(res, result.items, result.total, result.page, result.limit);
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminProductsRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const product = await productsService.getProductById(req.user!.businessId, req.params.id);
+    return apiSuccess(res, product);
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminProductsRouter.post(
+  '/',
+  validateBody(createProductSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const images = await productsService.listProductImages(
-        req.user!.businessId,
-        req.params.id
-      );
-      return apiSuccess(res, images);
+      const created = await productsService.createProduct(req.user!.businessId, req.body);
+      return apiSuccess(res, created, 'Product created successfully', 201);
     } catch (err) {
       next(err);
     }
   }
 );
 
-productsRouter.post(
-  '/:id/images',
-  requireAuth,
-  requireRole('cashier'),
-  validateBody(uploadProductImageSchema),
+adminProductsRouter.put(
+  '/:id',
+  validateBody(updateProductSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const uploaded = await productsService.uploadProductImage(
+      const updated = await productsService.updateProduct(req.user!.businessId, req.params.id, req.body);
+      return apiSuccess(res, updated, 'Product updated successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+adminProductsRouter.patch(
+  '/:id/status',
+  validateBody(updateProductStatusSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const updated = await productsService.updateProductStatus(
         req.user!.businessId,
         req.params.id,
-        req.body
+        req.body.isAvailable
       );
-      return apiSuccess(res, uploaded, 'Product image uploaded successfully', 201);
+      return apiSuccess(res, updated, `Product ${req.body.isAvailable ? 'available' : 'unavailable'} updated successfully`);
     } catch (err) {
       next(err);
     }
   }
 );
 
-productsRouter.delete(
-  '/:id/images/:imageId',
-  requireAuth,
-  requireRole('cashier'),
+adminProductsRouter.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await productsService.softDeleteProduct(req.user!.businessId, req.params.id);
+    return apiSuccess(res, null, 'Product deleted successfully');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Supplier Products Router: mounted at /api/v1/supplier/products
+export const supplierProductsRouter = Router();
+
+supplierProductsRouter.use(requireAuth, requireActiveUser, requireSupplier);
+
+supplierProductsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // ENFORCE: supplier can ONLY list products belonging to their authenticated supplierId
+    const result = await productsService.listProducts(req.user!.businessId, {
+      supplierId: req.user!.supplierId!,
+      categoryId: req.query.categoryId as string | undefined,
+      search: req.query.search as string | undefined,
+      availableOnly: req.query.availableOnly === 'true',
+      page: req.query.page ? Number(req.query.page) : undefined,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    });
+    return apiPaginated(res, result.items, result.total, result.page, result.limit);
+  } catch (err) {
+    next(err);
+  }
+});
+
+supplierProductsRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // ENFORCE: supplier can ONLY retrieve product if it belongs to their authenticated supplierId
+    const product = await productsService.getProductById(
+      req.user!.businessId,
+      req.params.id,
+      req.user!.supplierId!
+    );
+    return apiSuccess(res, product);
+  } catch (err) {
+    next(err);
+  }
+});
+
+supplierProductsRouter.post(
+  '/',
+  validateBody(createProductSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const deleted = await productsService.deleteProductImage(
+      // ENFORCE: automatically assign authenticated supplier_id; ignore any client-supplied supplierId
+      const created = await productsService.createProduct(
         req.user!.businessId,
-        req.params.id,
-        req.params.imageId
+        req.body,
+        req.user!.supplierId!
       );
-      return apiSuccess(res, deleted, 'Product image deleted successfully');
+      return apiSuccess(res, created, 'Product created successfully', 201);
     } catch (err) {
       next(err);
     }
   }
 );
+
+supplierProductsRouter.put(
+  '/:id',
+  validateBody(updateProductSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // ENFORCE: supplier can ONLY modify their own products
+      const updated = await productsService.updateProduct(
+        req.user!.businessId,
+        req.params.id,
+        req.body,
+        req.user!.supplierId!
+      );
+      return apiSuccess(res, updated, 'Product updated successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+supplierProductsRouter.patch(
+  '/:id/status',
+  validateBody(updateProductStatusSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const updated = await productsService.updateProductStatus(
+        req.user!.businessId,
+        req.params.id,
+        req.body.isAvailable,
+        req.user!.supplierId!
+      );
+      return apiSuccess(res, updated, `Product ${req.body.isAvailable ? 'available' : 'unavailable'} updated successfully`);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+supplierProductsRouter.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await productsService.softDeleteProduct(
+      req.user!.businessId,
+      req.params.id,
+      req.user!.supplierId!
+    );
+    return apiSuccess(res, null, 'Product deleted successfully');
+  } catch (err) {
+    next(err);
+  }
+});

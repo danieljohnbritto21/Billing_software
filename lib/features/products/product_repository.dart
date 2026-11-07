@@ -18,11 +18,13 @@ final productRepositoryProvider = Provider<ProductRepository>((ref) {
 class ProductWithCategory {
   final ProductEntry product;
   final CategoryEntry? category;
+  final SupplierEntry? supplier;
   final ProductImageEntry? primaryImage;
 
   const ProductWithCategory({
     required this.product,
     this.category,
+    this.supplier,
     this.primaryImage,
   });
 }
@@ -47,6 +49,7 @@ class ProductRepository {
   Stream<List<ProductWithCategory>> watchProducts({
     String? searchQuery,
     String? categoryId,
+    String? supplierId,
     bool onlyAvailable = false,
   }) {
     final query = _db.select(_db.products).join([
@@ -54,12 +57,20 @@ class ProductRepository {
         _db.categories,
         _db.categories.id.equalsExp(_db.products.categoryId),
       ),
+      leftOuterJoin(
+        _db.suppliers,
+        _db.suppliers.id.equalsExp(_db.products.supplierId),
+      ),
     ]);
 
     query.where(_db.products.deletedAt.isNull());
 
     if (categoryId != null && categoryId.isNotEmpty && categoryId != 'ALL') {
       query.where(_db.products.categoryId.equals(categoryId));
+    }
+
+    if (supplierId != null && supplierId.isNotEmpty && supplierId != 'ALL') {
+      query.where(_db.products.supplierId.equals(supplierId));
     }
 
     if (onlyAvailable) {
@@ -83,10 +94,12 @@ class ProductRepository {
       for (final row in rows) {
         final product = row.readTable(_db.products);
         final category = row.readTableOrNull(_db.categories);
+        final supplier = row.readTableOrNull(_db.suppliers);
         final primaryImage = await getPrimaryImageForProduct(product.id);
         list.add(ProductWithCategory(
           product: product,
           category: category,
+          supplier: supplier,
           primaryImage: primaryImage,
         ));
       }
@@ -94,15 +107,30 @@ class ProductRepository {
     });
   }
 
-  Future<List<ProductWithCategory>> getAllProducts({bool onlyAvailable = false}) async {
+  Stream<List<ProductWithCategory>> watchSupplierProducts(String supplierId) {
+    return watchProducts(supplierId: supplierId);
+  }
+
+  Future<List<ProductWithCategory>> getAllProducts({
+    bool onlyAvailable = false,
+    String? supplierId,
+  }) async {
     final query = _db.select(_db.products).join([
       leftOuterJoin(
         _db.categories,
         _db.categories.id.equalsExp(_db.products.categoryId),
       ),
+      leftOuterJoin(
+        _db.suppliers,
+        _db.suppliers.id.equalsExp(_db.products.supplierId),
+      ),
     ]);
 
     query.where(_db.products.deletedAt.isNull());
+
+    if (supplierId != null && supplierId.isNotEmpty && supplierId != 'ALL') {
+      query.where(_db.products.supplierId.equals(supplierId));
+    }
 
     if (onlyAvailable) {
       query.where(_db.products.isAvailable.equals(true));
@@ -117,10 +145,12 @@ class ProductRepository {
     for (final row in rows) {
       final product = row.readTable(_db.products);
       final category = row.readTableOrNull(_db.categories);
+      final supplier = row.readTableOrNull(_db.suppliers);
       final primaryImage = await getPrimaryImageForProduct(product.id);
       list.add(ProductWithCategory(
         product: product,
         category: category,
+        supplier: supplier,
         primaryImage: primaryImage,
       ));
     }
@@ -133,7 +163,7 @@ class ProductRepository {
           .getSingleOrNull();
     }
     return (_db.select(_db.products)..where((t) => t.id.equals(id) & t.deletedAt.isNull()))
-        .getSingleOrNull();
+          .getSingleOrNull();
   }
 
   Future<List<ProductImageEntry>> getImagesForProduct(String productId) {
@@ -228,15 +258,23 @@ class ProductRepository {
 
   Future<void> deleteProductImage(String imageId) async {
     final img = await (_db.select(_db.productImages)..where((t) => t.id.equals(imageId))).getSingleOrNull();
-    if (img != null) {
-      final productId = img.productId;
-      await (_db.delete(_db.productImages)..where((t) => t.id.equals(imageId))).go();
-      if (img.isPrimary) {
-        final remaining = await getImagesForProduct(productId);
-        if (remaining.isNotEmpty) {
-          await setPrimaryImage(remaining.first.id, productId);
-        }
+    if (img == null) return;
+
+    await (_db.delete(_db.productImages)..where((t) => t.id.equals(imageId))).go();
+
+    if (img.isPrimary) {
+      final remaining = await getImagesForProduct(img.productId);
+      if (remaining.isNotEmpty) {
+        await (_db.update(_db.productImages)..where((t) => t.id.equals(remaining.first.id)))
+            .write(const ProductImagesCompanion(isPrimary: Value(true)));
       }
+    }
+
+    final api = _api;
+    if (api != null && api.authToken != null) {
+      try {
+        await api.delete('/products/${img.productId}/images/$imageId');
+      } catch (_) {}
     }
   }
 
@@ -244,6 +282,7 @@ class ProductRepository {
     required String name,
     String? code,
     String? categoryId,
+    String? supplierId,
     String? description,
     required int sellingPricePaise,
     int costPricePaise = 0,
@@ -270,6 +309,7 @@ class ProductRepository {
       'code': code?.trim(),
       'categoryId': categoryId,
       'categoryName': categoryName,
+      'supplierId': supplierId,
       'description': description?.trim(),
       'sellingPricePaise': sellingPricePaise,
       'costPricePaise': costPricePaise,
@@ -285,6 +325,7 @@ class ProductRepository {
             ProductsCompanion.insert(
               id: productId,
               businessId: Value(bizId),
+              supplierId: Value(supplierId),
               name: name.trim(),
               code: Value(code?.trim()),
               categoryId: Value(categoryId),
@@ -342,6 +383,7 @@ class ProductRepository {
       'code': product.code,
       'categoryId': product.categoryId,
       'categoryName': categoryName,
+      'supplierId': product.supplierId,
       'description': product.description,
       'sellingPricePaise': product.sellingPricePaise,
       'costPricePaise': product.costPricePaise,
@@ -349,16 +391,28 @@ class ProductRepository {
       'isTaxInclusive': product.isTaxInclusive,
       'unit': product.unit,
       'isAvailable': product.isAvailable,
+      'imagePath': product.imagePath,
     };
 
     await _db.transaction(() async {
-      await _db.update(_db.products).replace(
-            product.copyWith(
-              businessId: Value(bizId),
-              updatedAt: now,
-              syncStatus: const Value('pending_update'),
-            ),
-          );
+      await (_db.update(_db.products)..where((t) => t.id.equals(product.id))).write(
+        ProductsCompanion(
+          name: Value(product.name),
+          code: Value(product.code),
+          categoryId: Value(product.categoryId),
+          supplierId: Value(product.supplierId),
+          description: Value(product.description),
+          sellingPricePaise: Value(product.sellingPricePaise),
+          costPricePaise: Value(product.costPricePaise),
+          gstRatePercent: Value(product.gstRatePercent),
+          isTaxInclusive: Value(product.isTaxInclusive),
+          unit: Value(product.unit),
+          isAvailable: Value(product.isAvailable),
+          imagePath: Value(product.imagePath),
+          updatedAt: Value(now),
+          syncStatus: const Value('pending_update'),
+        ),
+      );
 
       if (_sync != null) {
         await _sync.enqueueChange(
@@ -366,6 +420,7 @@ class ProductRepository {
           recordId: product.id,
           operation: 'UPDATE',
           payload: productPayload,
+          clientVersion: product.serverVersion,
           triggerSync: false,
         );
       }
@@ -376,34 +431,35 @@ class ProductRepository {
     if (newImages != null && newImages.isNotEmpty) {
       try {
         await addProductImages(product.id, newImages);
-      } catch (_) {
-        // Preserved in local SQLite
-      }
+      } catch (_) {}
     }
   }
 
-  Future<void> toggleAvailability(String id, bool isAvailable) async {
+  Future<void> deleteProduct(String id) async {
     final now = DateTime.now();
-    await _db.transaction(() async {
-      await (_db.update(_db.products)..where((t) => t.id.equals(id)))
-          .write(ProductsCompanion(
-        isAvailable: Value(isAvailable),
-        updatedAt: Value(now),
-        syncStatus: const Value('pending_update'),
-      ));
+    final p = await getProductById(id);
+    final bizId = await _resolveBusinessId() ?? p?.businessId;
 
-      final p = await (_db.select(_db.products)..where((t) => t.id.equals(id))).getSingleOrNull();
-      if (p != null && _sync != null) {
+    await _db.transaction(() async {
+      await (_db.update(_db.products)..where((t) => t.id.equals(id))).write(
+        ProductsCompanion(
+          deletedAt: Value(now),
+          updatedAt: Value(now),
+          syncStatus: const Value('pending_delete'),
+        ),
+      );
+
+      if (_sync != null) {
         await _sync.enqueueChange(
           entityName: 'products',
           recordId: id,
-          operation: 'UPDATE',
+          operation: 'DELETE',
           payload: {
             'id': id,
-            'name': p.name,
-            'sellingPricePaise': p.sellingPricePaise,
-            'isAvailable': isAvailable,
+            'businessId': bizId,
+            'deletedAt': now.toIso8601String(),
           },
+          clientVersion: p?.serverVersion,
           triggerSync: false,
         );
       }
@@ -413,86 +469,41 @@ class ProductRepository {
   }
 
   Future<bool> deleteProductSafely(String id) async {
-    final count = await (_db.select(_db.invoiceItems)
-          ..where((t) => t.productId.equals(id)))
-        .get();
-
-    final now = DateTime.now();
-    final isDeactivated = count.isNotEmpty;
-
-    await _db.transaction(() async {
-      if (isDeactivated) {
-        // Historical invoice items exist: deactivate instead of deleting to preserve financial integrity
-        await (_db.update(_db.products)..where((t) => t.id.equals(id))).write(
-          ProductsCompanion(
-            isAvailable: const Value(false),
-            updatedAt: Value(now),
-            syncStatus: const Value('pending_update'),
-          ),
-        );
-
-        final p = await (_db.select(_db.products)..where((t) => t.id.equals(id))).getSingleOrNull();
-        if (p != null && _sync != null) {
-          await _sync.enqueueChange(
-            entityName: 'products',
-            recordId: id,
-            operation: 'UPDATE',
-            payload: {
-              'id': id,
-              'name': p.name,
-              'sellingPricePaise': p.sellingPricePaise,
-              'isAvailable': false,
-            },
-            triggerSync: false,
-          );
-        }
-      } else {
-        await (_db.update(_db.products)..where((t) => t.id.equals(id))).write(
-          ProductsCompanion(
-            deletedAt: Value(now),
-            isAvailable: const Value(false),
-            syncStatus: const Value('pending_delete'),
-          ),
-        );
-
-        if (_sync != null) {
-          await _sync.enqueueChange(
-            entityName: 'products',
-            recordId: id,
-            operation: 'DELETE',
-            payload: {},
-            triggerSync: false,
-          );
-        }
-      }
-    });
-
-    _sync?.notifyPendingAndSync();
-    return !isDeactivated;
+    final invoiceItems = await (_db.select(_db.invoiceItems)..where((t) => t.productId.equals(id))).get();
+    if (invoiceItems.isNotEmpty) {
+      await toggleAvailability(id, false);
+      return false;
+    }
+    await deleteProduct(id);
+    return true;
   }
 
-  Future<void> seedSampleProductsIfEmpty() async {
+  Future<void> toggleAvailability(String id, bool isAvailable) async {
+    final now = DateTime.now();
+    final p = await getProductById(id);
+    if (p == null) return;
+
+    await updateProduct(p.copyWith(isAvailable: isAvailable, updatedAt: now));
+  }
+
+  Future<void> seedSampleProductsIfEmpty() => seedInitialProductsIfEmpty();
+
+  Future<void> seedInitialProductsIfEmpty() async {
     final count = await _db.products.count().getSingle();
     if (count == 0) {
-      final categories = await _db.select(_db.categories).get();
-      String? findCategory(String name) {
-        final match = categories.where(
-          (c) => c.name.toLowerCase().contains(name.toLowerCase()),
-        );
-        return match.isNotEmpty ? match.first.id : null;
-      }
-
-      final fastFoodId = findCategory('Fast Food');
-      final beveragesId = findCategory('Beverages');
-      final mainCourseId = findCategory('Main Course');
-      final snacksId = findCategory('Snacks');
+      // Find category IDs
+      final cats = await _db.select(_db.categories).get();
+      String? fastFoodId = cats.where((c) => c.name.toLowerCase().contains('fast')).firstOrNull?.id;
+      String? beveragesId = cats.where((c) => c.name.toLowerCase().contains('bev')).firstOrNull?.id;
+      String? mainCourseId = cats.where((c) => c.name.toLowerCase().contains('main')).firstOrNull?.id;
+      String? snacksId = cats.where((c) => c.name.toLowerCase().contains('snack')).firstOrNull?.id;
 
       final samples = [
         {
-          'name': 'Crispy Chicken Burger',
+          'name': 'Crispy Veg Burger',
           'code': 'BUR-01',
           'catId': fastFoodId,
-          'price': 14900,
+          'price': 7900,
           'unit': 'piece',
           'gst': 5.0,
         },
@@ -566,3 +577,8 @@ class ProductRepository {
     }
   }
 }
+
+final productsStreamProvider = StreamProvider<List<ProductWithCategory>>((ref) {
+  final repo = ref.watch(productRepositoryProvider);
+  return repo.watchProducts();
+});

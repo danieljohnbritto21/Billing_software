@@ -54,6 +54,16 @@ export class CategoriesService {
     });
   }
 
+  async updateCategoryStatus(businessId: string, id: string, isActive: boolean) {
+    await this.getCategoryById(businessId, id);
+    return prisma.categories.update({
+      where: { id },
+      data: {
+        is_active: isActive,
+      },
+    });
+  }
+
   async softDeleteCategory(businessId: string, id: string) {
     await this.getCategoryById(businessId, id);
     return prisma.categories.update({

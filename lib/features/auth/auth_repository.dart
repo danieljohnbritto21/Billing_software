@@ -46,8 +46,12 @@ class AuthRepository {
   }
 
   /// Authenticates user against the remote REST API when connected,
-  /// with seamless offline fallback against local SQLite Users table.
-  Future<UserEntry?> authenticate(String username, String password) async {
+  /// supporting both Admin (/auth/login) and Supplier (/auth/supplier-login) workflows.
+  Future<UserEntry?> authenticate(
+    String username,
+    String password, {
+    bool isSupplier = false,
+  }) async {
     final cleanUsername = username.trim().toLowerCase();
 
     // 1. Try remote API authentication if client is available
@@ -56,7 +60,9 @@ class AuthRepository {
       try {
         final devUid = await _deviceService?.getOrGenerateDeviceUid();
         final devName = await _deviceService?.getDeviceName();
-        final res = await api.post('/auth/login', body: {
+
+        final endpoint = isSupplier ? '/auth/supplier-login' : '/auth/login';
+        final res = await api.post(endpoint, body: {
           'username': cleanUsername,
           'password': password,
           if (devUid != null) 'deviceUid': devUid,
@@ -67,12 +73,29 @@ class AuthRepository {
           final token = res['token'].toString();
           final userJson = res['user'] as Map<String, dynamic>;
           final bizJson = res['business'] as Map<String, dynamic>?;
-          final bizId = bizJson?['id']?.toString() ?? userJson['businessId']?.toString() ?? userJson['business_id']?.toString();
+          final bizId = bizJson?['id']?.toString() ??
+              userJson['businessId']?.toString() ??
+              userJson['business_id']?.toString();
           final devId = res['deviceId']?.toString();
+          final suppId = res['supplierId']?.toString() ??
+              userJson['supplierId']?.toString() ??
+              userJson['supplier_id']?.toString();
+
+          final rawRole = (userJson['role'] ?? (isSupplier ? 'SUPPLIER' : 'ADMIN')).toString().toLowerCase();
+
+          // Reject legacy cashier or inactive accounts
+          if (rawRole == AppConstants.roleCashier || rawRole == 'cashier_legacy') {
+            throw ApiException(403, 'Cashier access is deactivated. Please contact your administrator.');
+          }
+
+          final normalizedRole = isSupplier || rawRole == 'supplier'
+              ? AppConstants.roleSupplier
+              : AppConstants.roleAdmin;
 
           api.setAuthToken(token);
           if (bizId != null) api.setBusinessId(bizId);
           if (devId != null) api.setDeviceId(devId);
+          if (suppId != null) api.setSupplierId(suppId);
 
           // Save auth settings locally
           await _db.into(_db.appSettings).insertOnConflictUpdate(
@@ -86,6 +109,11 @@ class AuthRepository {
           if (devId != null) {
             await _db.into(_db.appSettings).insertOnConflictUpdate(
               AppSettingsCompanion.insert(key: 'device_id', value: devId),
+            );
+          }
+          if (suppId != null) {
+            await _db.into(_db.appSettings).insertOnConflictUpdate(
+              AppSettingsCompanion.insert(key: 'supplier_id', value: suppId),
             );
           }
 
@@ -103,9 +131,10 @@ class AuthRepository {
           final localUser = UserEntry(
             id: userJson['id'] ?? _uuid.v4(),
             businessId: bizId?.toString(),
+            supplierId: suppId,
             username: cleanUsername,
             fullName: userJson['fullName'] ?? userJson['full_name'] ?? cleanUsername,
-            role: userJson['role'] ?? AppConstants.roleCashier,
+            role: normalizedRole,
             passwordHash: hash,
             salt: salt,
             isActive: true,
@@ -125,6 +154,7 @@ class AuthRepository {
               createdAt: localUser.createdAt,
               updatedAt: localUser.updatedAt,
               businessId: Value(localUser.businessId),
+              supplierId: Value(localUser.supplierId),
             ),
           );
 
@@ -143,9 +173,16 @@ class AuthRepository {
     }
 
     // 2. Offline fallback: Authenticate against local Users table
-    final user = await (_db.select(_db.users)
-          ..where((u) => u.username.lower().equals(cleanUsername) & u.isActive.equals(true)))
-        .getSingleOrNull();
+    final query = _db.select(_db.users)
+      ..where((u) {
+        final baseFilter = u.username.lower().equals(cleanUsername) & u.isActive.equals(true);
+        if (isSupplier) {
+          return baseFilter & u.role.equals(AppConstants.roleSupplier);
+        } else {
+          return baseFilter & u.role.equals(AppConstants.roleSupplier).not() & u.role.equals('cashier_legacy').not();
+        }
+      });
+    final user = await query.getSingleOrNull();
 
     if (user == null) return null;
 
@@ -158,15 +195,76 @@ class AuthRepository {
     return null;
   }
 
+  /// Restores active session from backend using stored token
+  Future<UserEntry?> restoreSession() async {
+    final api = _api;
+    if (api == null) return null;
+
+    await api.restoreSavedAuth();
+    if (api.authToken == null || api.authToken!.isEmpty) return null;
+
+    try {
+      final res = await api.get('/auth/me');
+      if (res is Map<String, dynamic> && res['user'] != null) {
+        final userJson = res['user'] as Map<String, dynamic>;
+        final rawRole = (userJson['role'] ?? 'ADMIN').toString().toLowerCase();
+
+        if (rawRole == AppConstants.roleCashier || rawRole == 'cashier_legacy') {
+          await clearSession();
+          return null;
+        }
+
+        final suppId = res['supplierId']?.toString() ??
+            userJson['supplierId']?.toString() ??
+            userJson['supplier_id']?.toString();
+
+        final localUser = await (_db.select(_db.users)
+              ..where((u) => u.username.lower().equals(userJson['username'].toString().toLowerCase())))
+            .getSingleOrNull();
+
+        if (localUser != null) {
+          return localUser;
+        }
+
+        final now = DateTime.now();
+        return UserEntry(
+          id: userJson['id'] ?? _uuid.v4(),
+          businessId: userJson['businessId'] ?? userJson['business_id'],
+          supplierId: suppId,
+          username: userJson['username'],
+          fullName: userJson['fullName'] ?? userJson['full_name'] ?? userJson['username'],
+          role: rawRole == 'supplier' ? AppConstants.roleSupplier : AppConstants.roleAdmin,
+          passwordHash: '',
+          salt: '',
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        );
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
   /// Clears stored user session and tokens on logout
   Future<void> clearSession() async {
+    try {
+      if (_api?.authToken != null) {
+        await _api?.post('/auth/logout').catchError((_) => null);
+      }
+    } catch (_) {}
+
     _api?.setAuthToken(null);
     _api?.setBusinessId(null);
     _api?.setDeviceId(null);
-    await (_db.delete(_db.appSettings)..where((s) => s.key.isIn(['auth_token', 'business_id', 'device_id']))).go();
+    _api?.setSupplierId(null);
+
+    await (_db.delete(_db.appSettings)
+          ..where((s) => s.key.isIn(['auth_token', 'business_id', 'device_id', 'supplier_id'])))
+        .go();
   }
 
-  /// Seeds initial default Admin and Cashier accounts if no users exist locally
+  /// Seeds initial default Admin account if no users exist locally
   Future<void> seedInitialUsersIfEmpty() async {
     final count = await _db.users.count().getSingle();
     if (count == 0) {
@@ -189,14 +287,14 @@ class AuthRepository {
             ),
           );
 
-      // Default Cashier
+      // Default Cashier (legacy continuity)
       final cashierSalt = _generateSalt();
       final cashierHash = _hashPassword('cashier123', cashierSalt);
       await _db.into(_db.users).insert(
             UsersCompanion.insert(
               id: _uuid.v4(),
               username: 'cashier',
-              fullName: 'Main Cashier',
+              fullName: 'Store Cashier',
               role: AppConstants.roleCashier,
               passwordHash: cashierHash,
               salt: cashierSalt,
@@ -218,115 +316,73 @@ class AuthRepository {
         .watch();
   }
 
-  /// Get all active cashiers
-  Future<List<UserEntry>> getActiveCashiers() {
-    return (_db.select(_db.users)
-          ..where((u) => u.role.equals(AppConstants.roleCashier) & u.isActive.equals(true)))
-        .get();
-  }
-
-  /// Creates a new user account (Cashier or Admin)
+  /// Create user account locally
   Future<String> createUser({
     required String username,
     required String fullName,
     required String password,
     required String role,
   }) async {
-    final cleanUsername = username.trim().toLowerCase();
-    // Check existing
-    final existing = await (_db.select(_db.users)
-          ..where((u) => u.username.lower().equals(cleanUsername)))
-        .getSingleOrNull();
-
-    if (existing != null) {
-      throw Exception('Username "$cleanUsername" already exists.');
-    }
-
     final salt = _generateSalt();
     final hash = _hashPassword(password, salt);
-    final now = DateTime.now();
     final id = _uuid.v4();
-
-    // If online, also register staff on backend
-    final api = _api;
-    if (api != null && api.authToken != null) {
-      try {
-        await api.post('/users', body: {
-          'username': cleanUsername,
-          'fullName': fullName.trim(),
-          'password': password,
-          'role': role,
-        });
-      } catch (_) {
-        // Continue local creation
-      }
-    }
+    final now = DateTime.now();
 
     await _db.into(_db.users).insert(
-          UsersCompanion.insert(
-            id: id,
-            username: cleanUsername,
-            fullName: fullName.trim(),
-            role: role,
-            passwordHash: hash,
-            salt: salt,
-            isActive: const Value(true),
-            createdAt: now,
-            updatedAt: now,
-          ),
-        );
+      UsersCompanion.insert(
+        id: id,
+        username: username.trim().toLowerCase(),
+        fullName: fullName.trim(),
+        role: role,
+        passwordHash: hash,
+        salt: salt,
+        isActive: const Value(true),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
     return id;
   }
 
-  /// Updates user details or resets password
+  /// Update user account locally
   Future<void> updateUser({
     required String id,
     String? fullName,
+    String? password,
     String? newPassword,
     bool? isActive,
   }) async {
     final user = await (_db.select(_db.users)..where((u) => u.id.equals(id))).getSingleOrNull();
-    if (user == null) throw Exception('User not found');
-
-    String? newHash;
-    String? newSalt;
-    if (newPassword != null && newPassword.trim().isNotEmpty) {
-      newSalt = _generateSalt();
-      newHash = _hashPassword(newPassword.trim(), newSalt);
-    }
-
-    final api = _api;
-    if (api != null && api.authToken != null && isActive != null) {
-      try {
-        await api.put('/users/$id/status', body: {'isActive': isActive});
-      } catch (_) {}
-    }
-
-    await (_db.update(_db.users)..where((u) => u.id.equals(id))).write(
-      UsersCompanion(
-        fullName: fullName != null ? Value(fullName.trim()) : const Value.absent(),
-        passwordHash: newHash != null ? Value(newHash) : const Value.absent(),
-        salt: newSalt != null ? Value(newSalt) : const Value.absent(),
-        isActive: isActive != null ? Value(isActive) : const Value.absent(),
-        updatedAt: Value(DateTime.now()),
-      ),
-    );
-  }
-
-  /// Deletes a cashier account safely (ensures at least 1 active admin remains)
-  Future<void> deleteUser(String id) async {
-    final user = await (_db.select(_db.users)..where((u) => u.id.equals(id))).getSingleOrNull();
     if (user == null) return;
 
-    if (user.role == AppConstants.roleAdmin) {
-      final activeAdmins = await (_db.select(_db.users)
-            ..where((u) => u.role.equals(AppConstants.roleAdmin) & u.isActive.equals(true)))
-          .get();
-      if (activeAdmins.length <= 1) {
-        throw Exception('Cannot delete the last active administrator.');
-      }
+    final now = DateTime.now();
+    UsersCompanion companion = UsersCompanion(updatedAt: Value(now));
+
+    if (fullName != null) {
+      companion = companion.copyWith(fullName: Value(fullName.trim()));
+    }
+    if (isActive != null) {
+      companion = companion.copyWith(isActive: Value(isActive));
+    }
+    final effectivePassword = newPassword ?? password;
+    if (effectivePassword != null && effectivePassword.isNotEmpty) {
+      final salt = _generateSalt();
+      final hash = _hashPassword(effectivePassword, salt);
+      companion = companion.copyWith(
+        salt: Value(salt),
+        passwordHash: Value(hash),
+      );
     }
 
+    await (_db.update(_db.users)..where((u) => u.id.equals(id))).write(companion);
+  }
+
+  /// Delete user account locally
+  Future<void> deleteUser(String id) async {
+    final user = await (_db.select(_db.users)..where((u) => u.id.equals(id))).getSingleOrNull();
+    if (user != null && user.role == AppConstants.roleAdmin) {
+      throw Exception('Cannot delete primary Admin account');
+    }
     await (_db.delete(_db.users)..where((u) => u.id.equals(id))).go();
   }
 }

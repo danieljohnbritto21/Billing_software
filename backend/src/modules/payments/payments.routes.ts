@@ -27,7 +27,7 @@ paymentsRouter.get(
 paymentsRouter.post(
   '/',
   requireAuth,
-  requireRole('cashier'),
+  requireRole('ADMIN'),
   validateBody(recordPaymentSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {

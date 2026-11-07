@@ -7,51 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model audit_logs {
-  id          BigInt     @id @default(autoincrement())
-  business_id String     @db.Uuid
-  user_id     String?    @db.Uuid
-  device_id   String?    @db.Uuid
-  action      String     @db.VarChar(60)
-  entity_type String     @db.VarChar(60)
-  entity_id   String     @db.VarChar(100)
-  details     Json?
-  ip_address  String?    @db.VarChar(45)
-  created_at  DateTime   @default(now()) @db.Timestamptz(6)
-  businesses  businesses @relation(fields: [business_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  devices     devices?   @relation(fields: [device_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users       users?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-}
-
-model bill_notes {
-  id                 String   @id @db.Uuid
-  invoice_id         String   @unique(map: "uq_invoice_bill_note") @db.Uuid
-  note               String
-  is_customer_facing Boolean  @default(true)
-  created_at         DateTime @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime @default(now()) @db.Timestamptz(6)
-  server_version     BigInt?  @default(autoincrement())
-  invoices           invoices @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-}
-
-model business_settings {
-  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  business_id    String     @db.Uuid
-  setting_key    String     @db.VarChar(100)
-  setting_value  String
-  server_version BigInt?    @default(autoincrement())
-  updated_at     DateTime   @default(now()) @db.Timestamptz(6)
-  businesses     businesses @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([business_id, setting_key], map: "uq_business_setting")
-}
-
-model business_sync_cursors {
-  business_id String     @id @db.Uuid
-  last_cursor BigInt     @default(0)
-  updated_at  DateTime   @default(now()) @db.Timestamptz(6)
-  businesses  businesses @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-}
+// ==========================================
+// 1. AUTHENTICATION & BUSINESS TENANCY
+// ==========================================
 
 model businesses {
   id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -68,15 +26,158 @@ model businesses {
   business_settings     business_settings[]
   business_sync_cursors business_sync_cursors?
   categories            categories[]
-  customers             customers[]
+  suppliers             suppliers[]
   devices               devices[]
   dining_tables         dining_tables[]
+  customers             customers[]
+  orders                orders[]
   invoices              invoices[]
   products              products[]
+  purchase_orders       purchase_orders[]
+  purchase_invoices     purchase_invoices[]
+  supplier_payments     supplier_payments[]
   sync_change_log       sync_change_log[]
   user_sessions         user_sessions[]
   users                 users[]
 }
+
+model business_settings {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id    String     @db.Uuid
+  setting_key    String     @db.VarChar(100)
+  setting_value  String
+  server_version BigInt?    @default(autoincrement())
+  updated_at     DateTime   @default(now()) @db.Timestamptz(6)
+  businesses     businesses @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([business_id, setting_key], map: "uq_business_setting")
+}
+
+model roles {
+  id          String  @id @db.VarChar(30)
+  description String  @db.VarChar(255)
+  users       users[]
+}
+
+model users {
+  id                                                     String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id                                            String            @db.Uuid
+  supplier_id                                            String?           @db.Uuid
+  username                                               String            @db.VarChar(60)
+  full_name                                              String            @db.VarChar(120)
+  role_id                                                String            @db.VarChar(30)
+  password_hash                                          String            @db.VarChar(255)
+  salt                                                   String            @db.VarChar(64)
+  is_active                                              Boolean           @default(true)
+  created_at                                             DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at                                             DateTime          @default(now()) @db.Timestamptz(6)
+  deleted_at                                             DateTime?         @db.Timestamptz(6)
+  server_version                                         BigInt?           @default(autoincrement())
+  audit_logs                                             audit_logs[]
+  user_sessions_user_sessions_business_id_user_idTousers user_sessions[]   @relation("user_sessions_business_id_user_idTousers")
+  user_sessions_user_sessions_user_idTousers             user_sessions[]   @relation("user_sessions_user_idTousers")
+  businesses                                             businesses        @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roles                                                  roles             @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  suppliers                                              suppliers?        @relation(fields: [supplier_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  orders_created                                         orders[]          @relation("orders_created_by")
+  purchase_orders_created                                purchase_orders[] @relation("purchase_orders_created_by")
+
+  @@unique([business_id, username], map: "uq_business_username")
+  @@unique([business_id, id], map: "uq_users_business_id")
+}
+
+model user_sessions {
+  id                                                   String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                                              String     @db.Uuid
+  device_id                                            String     @db.Uuid
+  refresh_token_hash                                   String     @db.VarChar(255)
+  expires_at                                           DateTime   @db.Timestamptz(6)
+  is_revoked                                           Boolean    @default(false)
+  created_at                                           DateTime   @default(now()) @db.Timestamptz(6)
+  business_id                                          String     @db.Uuid
+  devices_user_sessions_business_id_device_idTodevices devices    @relation("user_sessions_business_id_device_idTodevices", fields: [business_id, device_id], references: [business_id, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_sessions_device_business")
+  users_user_sessions_business_id_user_idTousers       users      @relation("user_sessions_business_id_user_idTousers", fields: [business_id, user_id], references: [business_id, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_sessions_user_business")
+  businesses                                           businesses @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  devices_user_sessions_device_idTodevices             devices    @relation("user_sessions_device_idTodevices", fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_user_sessions_user_idTousers                   users      @relation("user_sessions_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model devices {
+  id                                                         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id                                                String              @db.Uuid
+  device_uid                                                 String              @db.VarChar(128)
+  device_name                                                String              @db.VarChar(100)
+  tailscale_ip                                               String?             @db.VarChar(45)
+  is_authorized                                              Boolean             @default(false)
+  authorized_at                                              DateTime?           @db.Timestamptz(6)
+  last_seen_at                                               DateTime?           @db.Timestamptz(6)
+  created_at                                                 DateTime            @default(now()) @db.Timestamptz(6)
+  audit_logs                                                 audit_logs[]
+  device_sync_state                                          device_sync_state[]
+  businesses                                                 businesses          @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invoices                                                   invoices[]
+  orders                                                     orders[]
+  sync_conflicts                                             sync_conflicts[]
+  sync_logs                                                  sync_logs[]
+  user_sessions_user_sessions_business_id_device_idTodevices user_sessions[]     @relation("user_sessions_business_id_device_idTodevices")
+  user_sessions_user_sessions_device_idTodevices             user_sessions[]     @relation("user_sessions_device_idTodevices")
+
+  @@unique([business_id, device_uid], map: "uq_business_device")
+  @@unique([business_id, id], map: "uq_devices_business_id")
+}
+
+model audit_logs {
+  id          BigInt     @id @default(autoincrement())
+  business_id String     @db.Uuid
+  user_id     String?    @db.Uuid
+  device_id   String?    @db.Uuid
+  action      String     @db.VarChar(60)
+  entity_type String     @db.VarChar(60)
+  entity_id   String     @db.VarChar(100)
+  details     Json?
+  ip_address  String?    @db.VarChar(45)
+  created_at  DateTime   @default(now()) @db.Timestamptz(6)
+  businesses  businesses @relation(fields: [business_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  devices     devices?   @relation(fields: [device_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users       users?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+// ==========================================
+// 2. SUPPLIER MANAGEMENT
+// ==========================================
+
+model suppliers {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id    String    @db.Uuid
+  supplier_code  String    @db.VarChar(60)
+  supplier_name  String    @db.VarChar(150)
+  contact_person String?   @db.VarChar(120)
+  phone_number   String?   @db.VarChar(30)
+  email          String?   @db.VarChar(120)
+  address        String?
+  gstin          String?   @db.VarChar(20)
+  notes          String?
+  is_active      Boolean   @default(true)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at     DateTime? @db.Timestamptz(6)
+  server_version BigInt?   @default(autoincrement())
+
+  businesses        businesses          @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users             users[]
+  products          products[]
+  purchase_orders   purchase_orders[]
+  purchase_invoices purchase_invoices[]
+  supplier_payments supplier_payments[]
+
+  @@unique([business_id, supplier_code], map: "uq_supplier_code_business")
+  @@unique([business_id, id], map: "uq_suppliers_business_id")
+  @@index([business_id, server_version], map: "idx_suppliers_sync")
+}
+
+// ==========================================
+// 3. PRODUCT CATALOG (ADMIN CATEGORIES, SUPPLIER PRODUCTS)
+// ==========================================
 
 model categories {
   id             String     @id @db.Uuid
@@ -97,181 +198,38 @@ model categories {
   @@index([business_id, server_version], map: "idx_categories_sync")
 }
 
-model customers {
-  id             String     @id @db.Uuid
-  business_id    String     @db.Uuid
-  name           String     @db.VarChar(120)
-  phone          String?    @db.VarChar(30)
-  address        String?
-  notes          String?
-  created_at     DateTime   @default(now()) @db.Timestamptz(6)
-  updated_at     DateTime   @default(now()) @db.Timestamptz(6)
-  deleted_at     DateTime?  @db.Timestamptz(6)
-  server_version BigInt?    @default(autoincrement())
-  businesses     businesses @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  invoices       invoices[]
+model products {
+  id                  String    @id @db.Uuid
+  business_id         String    @db.Uuid
+  supplier_id         String?   @db.Uuid
+  category_id         String?   @db.Uuid
+  name                String    @db.VarChar(150)
+  code                String?   @db.VarChar(60)
+  description         String?
+  cost_price_paise    BigInt    @default(0)
+  selling_price_paise BigInt
+  gst_rate_percent    Decimal   @default(0.00) @db.Decimal(5, 2)
+  is_tax_inclusive    Boolean   @default(true)
+  unit                String    @default("plate") @db.VarChar(30)
+  is_available        Boolean   @default(true)
+  image_path          String?
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at          DateTime? @db.Timestamptz(6)
+  server_version      BigInt?   @default(autoincrement())
 
-  @@unique([business_id, id], map: "uq_customers_business_id")
-  @@index([business_id, server_version], map: "idx_customers_sync")
-}
+  order_items            order_items[]
+  invoice_items          invoice_items[]
+  product_images         product_images[]
+  purchase_order_items   purchase_order_items[]
+  purchase_invoice_items purchase_invoice_items[]
 
-model device_sync_state {
-  device_id           String   @db.Uuid
-  entity_name         String   @db.VarChar(60)
-  last_pulled_version BigInt   @default(0)
-  last_pushed_at      DateTime @default(now()) @db.Timestamptz(6)
-  devices             devices  @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  categories categories? @relation(fields: [business_id, category_id], references: [business_id, id], onDelete: NoAction, onUpdate: NoAction, map: "fk_products_category_business")
+  businesses businesses  @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  suppliers  suppliers?  @relation(fields: [business_id, supplier_id], references: [business_id, id], onDelete: NoAction, onUpdate: NoAction, map: "fk_products_supplier_business")
 
-  @@id([device_id, entity_name])
-}
-
-model devices {
-  id                                                         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  business_id                                                String              @db.Uuid
-  device_uid                                                 String              @db.VarChar(128)
-  device_name                                                String              @db.VarChar(100)
-  tailscale_ip                                               String?             @db.VarChar(45)
-  is_authorized                                              Boolean             @default(false)
-  authorized_at                                              DateTime?           @db.Timestamptz(6)
-  last_seen_at                                               DateTime?           @db.Timestamptz(6)
-  created_at                                                 DateTime            @default(now()) @db.Timestamptz(6)
-  audit_logs                                                 audit_logs[]
-  device_sync_state                                          device_sync_state[]
-  businesses                                                 businesses          @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  invoices                                                   invoices[]
-  sync_conflicts                                             sync_conflicts[]
-  sync_logs                                                  sync_logs[]
-  user_sessions_user_sessions_business_id_device_idTodevices user_sessions[]     @relation("user_sessions_business_id_device_idTodevices")
-  user_sessions_user_sessions_device_idTodevices             user_sessions[]     @relation("user_sessions_device_idTodevices")
-
-  @@unique([business_id, device_uid], map: "uq_business_device")
-  @@unique([business_id, id], map: "uq_devices_business_id")
-}
-
-model dining_tables {
-  id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  business_id        String     @db.Uuid
-  table_name         String     @db.VarChar(50)
-  seating_capacity   Int?       @default(4)
-  current_invoice_id String?    @db.Uuid
-  is_occupied        Boolean    @default(false)
-  updated_at         DateTime   @default(now()) @db.Timestamptz(6)
-  deleted_at         DateTime?  @db.Timestamptz(6)
-  businesses         businesses @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  invoices           invoices?  @relation(fields: [business_id, current_invoice_id], references: [business_id, id], onDelete: SetNull, onUpdate: NoAction, map: "fk_dining_tables_invoice_business")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model invoice_items {
-  id                   String    @id @db.Uuid
-  invoice_id           String    @db.Uuid
-  product_id           String?   @db.Uuid
-  product_name         String    @db.VarChar(150)
-  product_code         String?   @db.VarChar(60)
-  unit                 String    @db.VarChar(30)
-  unit_price_paise     BigInt
-  quantity             Decimal   @db.Decimal(10, 3)
-  discount_paise       BigInt    @default(0)
-  gst_rate_percent     Decimal   @default(0.00) @db.Decimal(5, 2)
-  is_tax_inclusive     Boolean   @default(true)
-  taxable_amount_paise BigInt
-  tax_amount_paise     BigInt
-  total_amount_paise   BigInt
-  created_at           DateTime  @default(now()) @db.Timestamptz(6)
-  invoices             invoices  @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  products             products? @relation(fields: [product_id], references: [id], onUpdate: NoAction)
-
-  @@index([invoice_id], map: "idx_invoice_items_inv")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model invoices {
-  id                        String          @id @db.Uuid
-  business_id               String          @db.Uuid
-  device_id                 String?         @db.Uuid
-  invoice_number            String          @db.VarChar(60)
-  customer_id               String?         @db.Uuid
-  customer_name             String?         @db.VarChar(120)
-  customer_phone            String?         @db.VarChar(30)
-  subtotal_paise            BigInt
-  item_discount_total_paise BigInt          @default(0)
-  bill_discount_paise       BigInt          @default(0)
-  taxable_amount_paise      BigInt
-  cgst_paise                BigInt          @default(0)
-  sgst_paise                BigInt          @default(0)
-  igst_paise                BigInt          @default(0)
-  round_off_paise           BigInt          @default(0)
-  grand_total_paise         BigInt
-  paid_amount_paise         BigInt          @default(0)
-  payment_method            String          @default("Cash") @db.VarChar(40)
-  payment_status            String          @default("Paid") @db.VarChar(40)
-  order_status              String          @default("Completed") @db.VarChar(40)
-  order_type                String          @default("Dine In") @db.VarChar(40)
-  table_number              String?         @db.VarChar(40)
-  delivery_address          String?
-  kot_number                String?         @db.VarChar(60)
-  cashier_id                String?         @db.VarChar(60)
-  cashier_name              String?         @db.VarChar(120)
-  is_cancelled              Boolean         @default(false)
-  cancelled_at              DateTime?       @db.Timestamptz(6)
-  cancel_reason             String?
-  idempotency_key           String          @db.VarChar(128)
-  created_at                DateTime        @db.Timestamptz(6)
-  updated_at                DateTime        @default(now()) @db.Timestamptz(6)
-  server_version            BigInt?         @default(autoincrement())
-  bill_notes                bill_notes?
-  dining_tables             dining_tables[]
-  invoice_items             invoice_items[]
-  customers                 customers?      @relation(fields: [business_id, customer_id], references: [business_id, id], onDelete: SetNull, onUpdate: NoAction, map: "fk_invoices_customer_business")
-  devices                   devices?        @relation(fields: [business_id, device_id], references: [business_id, id], onDelete: SetNull, onUpdate: NoAction, map: "fk_invoices_device_business")
-  businesses                businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  kot_records               kot_records[]
-  payments                  payments[]
-
-  @@unique([business_id, idempotency_key], map: "uq_invoice_idempotency")
-  @@unique([business_id, invoice_number], map: "uq_invoice_number")
-  @@unique([business_id, id], map: "uq_invoices_business_id")
-  @@index([business_id, created_at(sort: Desc)], map: "idx_invoices_created")
-  @@index([business_id, payment_status, order_status], map: "idx_invoices_status")
-  @@index([business_id, server_version], map: "idx_invoices_sync")
-}
-
-model kot_records {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  invoice_id      String   @db.Uuid
-  kot_number      String   @db.VarChar(60)
-  table_number    String?  @db.VarChar(40)
-  order_type      String   @db.VarChar(40)
-  items_json      Json
-  printed_at      DateTime @default(now()) @db.Timestamptz(6)
-  reprinted_count Int      @default(0)
-  server_version  BigInt?  @default(autoincrement())
-  updated_at      DateTime @default(now()) @db.Timestamptz(6)
-  invoices        invoices @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-}
-
-model payment_methods {
-  id          String     @id @db.VarChar(40)
-  description String     @db.VarChar(100)
-  payments    payments[]
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model payments {
-  id               String          @id @db.Uuid
-  invoice_id       String          @db.Uuid
-  amount_paise     BigInt
-  payment_method   String          @db.VarChar(40)
-  reference_number String?         @db.VarChar(100)
-  notes            String?
-  idempotency_key  String          @db.VarChar(128)
-  created_at       DateTime        @default(now()) @db.Timestamptz(6)
-  server_version   BigInt?         @default(autoincrement())
-  invoices         invoices        @relation(fields: [invoice_id], references: [id], onUpdate: NoAction)
-  payment_methods  payment_methods @relation(fields: [payment_method], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@unique([invoice_id, idempotency_key], map: "uq_payment_idempotency")
-  @@index([invoice_id, server_version], map: "idx_payments_sync")
+  @@unique([business_id, id], map: "uq_products_business_id")
+  @@index([business_id, server_version], map: "idx_products_sync")
 }
 
 model product_images {
@@ -293,38 +251,417 @@ model product_images {
   @@index([product_id], map: "idx_product_images_prod")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model products {
-  id                  String           @id @db.Uuid
-  business_id         String           @db.Uuid
-  category_id         String?          @db.Uuid
-  name                String           @db.VarChar(150)
-  code                String?          @db.VarChar(60)
-  description         String?
-  cost_price_paise    BigInt           @default(0)
-  selling_price_paise BigInt
-  gst_rate_percent    Decimal          @default(0.00) @db.Decimal(5, 2)
-  is_tax_inclusive    Boolean          @default(true)
-  unit                String           @default("plate") @db.VarChar(30)
-  is_available        Boolean          @default(true)
-  image_path          String?
-  created_at          DateTime         @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime         @default(now()) @db.Timestamptz(6)
-  deleted_at          DateTime?        @db.Timestamptz(6)
-  server_version      BigInt?          @default(autoincrement())
-  invoice_items       invoice_items[]
-  product_images      product_images[]
-  categories          categories?      @relation(fields: [business_id, category_id], references: [business_id, id], onDelete: SetNull, onUpdate: NoAction, map: "fk_products_category_business")
-  businesses          businesses       @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+// ==========================================
+// 4. CENTRAL SALES ORDERS, INVOICES & PAYMENTS
+// ==========================================
 
-  @@unique([business_id, id], map: "uq_products_business_id")
-  @@index([business_id, server_version], map: "idx_products_sync")
+model orders {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id          String    @db.Uuid
+  order_number         String    @db.VarChar(60)
+  created_by_user_id   String?   @db.Uuid
+  device_id            String?   @db.Uuid
+  dining_table_id      String?   @db.Uuid
+  order_type           String    @default("Dine In") @db.VarChar(40)
+  order_status         String    @default("Completed") @db.VarChar(40)
+  subtotal_paise       BigInt
+  item_discount_paise  BigInt    @default(0)
+  bill_discount_paise  BigInt    @default(0)
+  taxable_amount_paise BigInt
+  total_tax_paise      BigInt    @default(0)
+  cgst_paise           BigInt    @default(0)
+  sgst_paise           BigInt    @default(0)
+  igst_paise           BigInt    @default(0)
+  round_off_paise      BigInt    @default(0)
+  grand_total_paise    BigInt
+  amount_paid_paise    BigInt    @default(0)
+  balance_due_paise    BigInt    @default(0)
+  payment_status       String    @default("Paid") @db.VarChar(40)
+  notes                String?
+  ordered_at           DateTime  @default(now()) @db.Timestamptz(6)
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at           DateTime? @db.Timestamptz(6)
+  server_version       BigInt?   @default(autoincrement())
+
+  businesses      businesses    @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  created_by_user users?        @relation("orders_created_by", fields: [created_by_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  devices         devices?      @relation(fields: [device_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  order_items     order_items[]
+  invoices        invoices[]
+  kot_records     kot_records[]
+  payments        payments[]
+
+  @@unique([business_id, order_number], map: "uq_order_number_business")
+  @@unique([business_id, id], map: "uq_orders_business_id")
+  @@index([business_id, server_version], map: "idx_orders_sync")
 }
 
-model roles {
-  id          String  @id @db.VarChar(30)
-  description String  @db.VarChar(255)
-  users       users[]
+model order_items {
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id             String   @db.Uuid
+  order_id                String   @db.Uuid
+  product_id              String?  @db.Uuid
+  supplier_id             String?  @db.Uuid
+  product_name_snapshot   String   @db.VarChar(150)
+  product_code_snapshot   String?  @db.VarChar(60)
+  quantity                Decimal  @db.Decimal(10, 3)
+  unit                    String   @db.VarChar(30)
+  unit_price_paise        BigInt
+  discount_paise          BigInt   @default(0)
+  gst_percentage_snapshot Decimal  @default(0.00) @db.Decimal(5, 2)
+  taxable_amount_paise    BigInt
+  tax_amount_paise        BigInt
+  total_amount_paise      BigInt
+  special_instructions    String?
+  created_at              DateTime @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime @default(now()) @db.Timestamptz(6)
+
+  orders        orders          @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products      products?       @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  invoice_items invoice_items[]
+  kot_items     kot_items[]
+
+  @@index([order_id], map: "idx_order_items_order")
+}
+
+model invoices {
+  id                        String    @id @db.Uuid
+  business_id               String    @db.Uuid
+  order_id                  String?   @db.Uuid
+  device_id                 String?   @db.Uuid
+  invoice_number            String    @db.VarChar(60)
+  customer_id               String?   @db.Uuid
+  customer_name             String?   @db.VarChar(120)
+  customer_phone            String?   @db.VarChar(30)
+  subtotal_paise            BigInt
+  item_discount_total_paise BigInt    @default(0)
+  bill_discount_paise       BigInt    @default(0)
+  taxable_amount_paise      BigInt
+  cgst_paise                BigInt    @default(0)
+  sgst_paise                BigInt    @default(0)
+  igst_paise                BigInt    @default(0)
+  round_off_paise           BigInt    @default(0)
+  grand_total_paise         BigInt
+  paid_amount_paise         BigInt    @default(0)
+  payment_method            String    @default("Cash") @db.VarChar(40)
+  payment_status            String    @default("Paid") @db.VarChar(40)
+  order_status              String    @default("Completed") @db.VarChar(40)
+  order_type                String    @default("Dine In") @db.VarChar(40)
+  table_number              String?   @db.VarChar(40)
+  delivery_address          String?
+  kot_number                String?   @db.VarChar(60)
+  cashier_id                String?   @db.VarChar(60)
+  cashier_name              String?   @db.VarChar(120)
+  is_cancelled              Boolean   @default(false)
+  cancelled_at              DateTime? @db.Timestamptz(6)
+  cancel_reason             String?
+  idempotency_key           String    @db.VarChar(128)
+  created_at                DateTime  @db.Timestamptz(6)
+  updated_at                DateTime  @default(now()) @db.Timestamptz(6)
+  server_version            BigInt?   @default(autoincrement())
+
+  bill_notes    bill_notes?
+  dining_tables dining_tables[]
+  invoice_items invoice_items[]
+  customers     customers?      @relation(fields: [customer_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  orders        orders?         @relation(fields: [order_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  devices       devices?        @relation(fields: [business_id, device_id], references: [business_id, id], onDelete: NoAction, onUpdate: NoAction, map: "fk_invoices_device_business")
+  businesses    businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  kot_records   kot_records[]
+  payments      payments[]
+
+  @@unique([business_id, idempotency_key], map: "uq_invoice_idempotency")
+  @@unique([business_id, invoice_number], map: "uq_invoice_number")
+  @@unique([business_id, id], map: "uq_invoices_business_id")
+  @@index([business_id, created_at(sort: Desc)], map: "idx_invoices_created")
+  @@index([business_id, payment_status, order_status], map: "idx_invoices_status")
+  @@index([business_id, server_version], map: "idx_invoices_sync")
+}
+
+model invoice_items {
+  id                   String   @id @db.Uuid
+  invoice_id           String   @db.Uuid
+  order_item_id        String?  @db.Uuid
+  product_id           String?  @db.Uuid
+  product_name         String   @db.VarChar(150)
+  product_code         String?  @db.VarChar(60)
+  unit                 String   @db.VarChar(30)
+  unit_price_paise     BigInt
+  quantity             Decimal  @db.Decimal(10, 3)
+  discount_paise       BigInt   @default(0)
+  gst_rate_percent     Decimal  @default(0.00) @db.Decimal(5, 2)
+  is_tax_inclusive     Boolean  @default(true)
+  taxable_amount_paise BigInt
+  tax_amount_paise     BigInt
+  total_amount_paise   BigInt
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+
+  invoices    invoices     @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  order_items order_items? @relation(fields: [order_item_id], references: [id], onUpdate: NoAction)
+  products    products?    @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+
+  @@index([invoice_id], map: "idx_invoice_items_inv")
+}
+
+model bill_notes {
+  id                 String   @id @db.Uuid
+  invoice_id         String   @unique(map: "uq_invoice_bill_note") @db.Uuid
+  note               String
+  is_customer_facing Boolean  @default(true)
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
+  server_version     BigInt?  @default(autoincrement())
+  invoices           invoices @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model payment_methods {
+  id                String              @id @db.VarChar(40)
+  description       String              @db.VarChar(100)
+  payments          payments[]
+  supplier_payments supplier_payments[]
+}
+
+model payments {
+  id               String   @id @db.Uuid
+  invoice_id       String   @db.Uuid
+  order_id         String?  @db.Uuid
+  amount_paise     BigInt
+  payment_method   String   @db.VarChar(40)
+  reference_number String?  @db.VarChar(100)
+  notes            String?
+  idempotency_key  String   @db.VarChar(128)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  server_version   BigInt?  @default(autoincrement())
+
+  invoices        invoices        @relation(fields: [invoice_id], references: [id], onUpdate: NoAction)
+  orders          orders?         @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+  payment_methods payment_methods @relation(fields: [payment_method], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([invoice_id, idempotency_key], map: "uq_payment_idempotency")
+  @@index([invoice_id, server_version], map: "idx_payments_sync")
+}
+
+// ==========================================
+// 5. KITCHEN ORDER TICKETS (KOT)
+// ==========================================
+
+model kot_records {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invoice_id      String?  @db.Uuid
+  order_id        String?  @db.Uuid
+  kot_number      String   @db.VarChar(60)
+  table_number    String?  @db.VarChar(40)
+  order_type      String   @db.VarChar(40)
+  items_json      Json
+  printed_at      DateTime @default(now()) @db.Timestamptz(6)
+  reprinted_count Int      @default(0)
+  server_version  BigInt?  @default(autoincrement())
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  invoices  invoices?   @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  orders    orders?     @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  kot_items kot_items[]
+}
+
+model kot_items {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kot_id                String   @db.Uuid
+  order_item_id         String?  @db.Uuid
+  product_name_snapshot String   @db.VarChar(150)
+  quantity              Decimal  @db.Decimal(10, 3)
+  special_instructions  String?
+  item_status           String   @default("PENDING") @db.VarChar(30)
+  created_at            DateTime @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime @default(now()) @db.Timestamptz(6)
+
+  kot_records kot_records  @relation(fields: [kot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  order_items order_items? @relation(fields: [order_item_id], references: [id], onUpdate: NoAction)
+
+  @@index([kot_id], map: "idx_kot_items_kot")
+}
+
+// ==========================================
+// 6. SUPPLIER PURCHASE MANAGEMENT
+// ==========================================
+
+model purchase_orders {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id           String    @db.Uuid
+  supplier_id           String    @db.Uuid
+  purchase_order_number String    @db.VarChar(60)
+  created_by_user_id    String?   @db.Uuid
+  order_status          String    @default("DRAFT") @db.VarChar(40)
+  subtotal_paise        BigInt    @default(0)
+  discount_paise        BigInt    @default(0)
+  total_tax_paise       BigInt    @default(0)
+  grand_total_paise     BigInt    @default(0)
+  notes                 String?
+  ordered_at            DateTime  @default(now()) @db.Timestamptz(6)
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at            DateTime? @db.Timestamptz(6)
+  server_version        BigInt?   @default(autoincrement())
+
+  businesses           businesses             @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  suppliers            suppliers              @relation(fields: [business_id, supplier_id], references: [business_id, id], onDelete: Cascade, onUpdate: NoAction)
+  created_by_user      users?                 @relation("purchase_orders_created_by", fields: [created_by_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  purchase_order_items purchase_order_items[]
+  purchase_invoices    purchase_invoices[]
+
+  @@unique([business_id, purchase_order_number], map: "uq_purchase_order_number_business")
+  @@unique([business_id, id], map: "uq_purchase_orders_business_id")
+  @@index([business_id, server_version], map: "idx_purchase_orders_sync")
+}
+
+model purchase_order_items {
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchase_order_id       String   @db.Uuid
+  product_id              String?  @db.Uuid
+  product_name_snapshot   String   @db.VarChar(150)
+  quantity                Decimal  @db.Decimal(10, 3)
+  unit_price_paise        BigInt
+  gst_percentage_snapshot Decimal  @default(0.00) @db.Decimal(5, 2)
+  tax_amount_paise        BigInt   @default(0)
+  total_amount_paise      BigInt
+  created_at              DateTime @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime @default(now()) @db.Timestamptz(6)
+
+  purchase_orders purchase_orders @relation(fields: [purchase_order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products        products?       @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+
+  @@index([purchase_order_id], map: "idx_purchase_order_items_po")
+}
+
+model purchase_invoices {
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id               String    @db.Uuid
+  supplier_id               String    @db.Uuid
+  purchase_order_id         String?   @db.Uuid
+  supplier_invoice_number   String    @db.VarChar(80)
+  internal_reference_number String?   @db.VarChar(80)
+  invoice_date              DateTime  @default(now()) @db.Timestamptz(6)
+  subtotal_paise            BigInt    @default(0)
+  discount_paise            BigInt    @default(0)
+  tax_amount_paise          BigInt    @default(0)
+  grand_total_paise         BigInt
+  amount_paid_paise         BigInt    @default(0)
+  balance_due_paise         BigInt    @default(0)
+  invoice_status            String    @default("RECEIVED") @db.VarChar(40)
+  payment_status            String    @default("UNPAID") @db.VarChar(40)
+  created_at                DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at                DateTime? @db.Timestamptz(6)
+  server_version            BigInt?   @default(autoincrement())
+
+  businesses             businesses               @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  suppliers              suppliers                @relation(fields: [business_id, supplier_id], references: [business_id, id], onDelete: Cascade, onUpdate: NoAction)
+  purchase_orders        purchase_orders?         @relation(fields: [purchase_order_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  purchase_invoice_items purchase_invoice_items[]
+  supplier_payments      supplier_payments[]
+
+  @@unique([business_id, supplier_id, supplier_invoice_number], map: "uq_supplier_invoice_unique")
+  @@unique([business_id, id], map: "uq_purchase_invoices_business_id")
+  @@index([business_id, server_version], map: "idx_purchase_invoices_sync")
+}
+
+model purchase_invoice_items {
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchase_invoice_id     String   @db.Uuid
+  product_id              String?  @db.Uuid
+  product_name_snapshot   String   @db.VarChar(150)
+  quantity                Decimal  @db.Decimal(10, 3)
+  unit_price_paise        BigInt
+  gst_percentage_snapshot Decimal  @default(0.00) @db.Decimal(5, 2)
+  tax_amount_paise        BigInt   @default(0)
+  total_amount_paise      BigInt
+  created_at              DateTime @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime @default(now()) @db.Timestamptz(6)
+
+  purchase_invoices purchase_invoices @relation(fields: [purchase_invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products          products?         @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+
+  @@index([purchase_invoice_id], map: "idx_purchase_invoice_items_pi")
+}
+
+model supplier_payments {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id         String   @db.Uuid
+  supplier_id         String   @db.Uuid
+  purchase_invoice_id String?  @db.Uuid
+  amount_paise        BigInt
+  payment_method_id   String   @db.VarChar(40)
+  payment_reference   String?  @db.VarChar(100)
+  payment_status      String   @default("COMPLETED") @db.VarChar(30)
+  paid_by_user_id     String?  @db.Uuid
+  paid_at             DateTime @default(now()) @db.Timestamptz(6)
+  notes               String?
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @default(now()) @db.Timestamptz(6)
+  server_version      BigInt?  @default(autoincrement())
+
+  businesses        businesses         @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  suppliers         suppliers          @relation(fields: [business_id, supplier_id], references: [business_id, id], onDelete: Cascade, onUpdate: NoAction)
+  purchase_invoices purchase_invoices? @relation(fields: [purchase_invoice_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  payment_methods   payment_methods    @relation(fields: [payment_method_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([business_id, server_version], map: "idx_supplier_payments_sync")
+}
+
+// ==========================================
+// 7. RESTAURANT OPERATIONS
+// ==========================================
+
+model dining_tables {
+  id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id        String     @db.Uuid
+  table_name         String     @db.VarChar(50)
+  seating_capacity   Int?       @default(4)
+  current_invoice_id String?    @db.Uuid
+  is_occupied        Boolean    @default(false)
+  updated_at         DateTime   @default(now()) @db.Timestamptz(6)
+  deleted_at         DateTime?  @db.Timestamptz(6)
+  businesses         businesses @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invoices           invoices?  @relation(fields: [business_id, current_invoice_id], references: [business_id, id], onDelete: NoAction, onUpdate: NoAction, map: "fk_dining_tables_invoice_business")
+}
+
+model customers {
+  id             String     @id @db.Uuid
+  business_id    String     @db.Uuid
+  name           String     @db.VarChar(120)
+  phone          String?    @db.VarChar(30)
+  address        String?
+  notes          String?
+  created_at     DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime   @default(now()) @db.Timestamptz(6)
+  deleted_at     DateTime?  @db.Timestamptz(6)
+  server_version BigInt?    @default(autoincrement())
+  businesses     businesses @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invoices       invoices[]
+
+  @@unique([business_id, id], map: "uq_customers_business_id")
+  @@index([business_id, server_version], map: "idx_customers_sync")
+}
+
+// ==========================================
+// 8. SYNCHRONIZATION ENGINE
+// ==========================================
+
+model business_sync_cursors {
+  business_id String     @id @db.Uuid
+  last_cursor BigInt     @default(0)
+  updated_at  DateTime   @default(now()) @db.Timestamptz(6)
+  businesses  businesses @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model device_sync_state {
+  device_id           String   @db.Uuid
+  entity_name         String   @db.VarChar(60)
+  last_pulled_version BigInt   @default(0)
+  last_pushed_at      DateTime @default(now()) @db.Timestamptz(6)
+  devices             devices  @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([device_id, entity_name])
 }
 
 model sync_change_log {
@@ -365,42 +702,4 @@ model sync_logs {
   error_message     String?
   created_at        DateTime @default(now()) @db.Timestamptz(6)
   devices           devices  @relation(fields: [device_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-}
-
-model user_sessions {
-  id                                                   String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id                                              String     @db.Uuid
-  device_id                                            String     @db.Uuid
-  refresh_token_hash                                   String     @db.VarChar(255)
-  expires_at                                           DateTime   @db.Timestamptz(6)
-  is_revoked                                           Boolean    @default(false)
-  created_at                                           DateTime   @default(now()) @db.Timestamptz(6)
-  business_id                                          String     @db.Uuid
-  devices_user_sessions_business_id_device_idTodevices devices    @relation("user_sessions_business_id_device_idTodevices", fields: [business_id, device_id], references: [business_id, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_sessions_device_business")
-  users_user_sessions_business_id_user_idTousers       users      @relation("user_sessions_business_id_user_idTousers", fields: [business_id, user_id], references: [business_id, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_sessions_user_business")
-  businesses                                           businesses @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  devices_user_sessions_device_idTodevices             devices    @relation("user_sessions_device_idTodevices", fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_user_sessions_user_idTousers                   users      @relation("user_sessions_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-}
-
-model users {
-  id                                                     String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  business_id                                            String          @db.Uuid
-  username                                               String          @db.VarChar(60)
-  full_name                                              String          @db.VarChar(120)
-  role_id                                                String          @db.VarChar(30)
-  password_hash                                          String          @db.VarChar(255)
-  salt                                                   String          @db.VarChar(64)
-  is_active                                              Boolean         @default(true)
-  created_at                                             DateTime        @default(now()) @db.Timestamptz(6)
-  updated_at                                             DateTime        @default(now()) @db.Timestamptz(6)
-  server_version                                         BigInt?         @default(autoincrement())
-  audit_logs                                             audit_logs[]
-  user_sessions_user_sessions_business_id_user_idTousers user_sessions[] @relation("user_sessions_business_id_user_idTousers")
-  user_sessions_user_sessions_user_idTousers             user_sessions[] @relation("user_sessions_user_idTousers")
-  businesses                                             businesses      @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  roles                                                  roles           @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@unique([business_id, username], map: "uq_business_username")
-  @@unique([business_id, id], map: "uq_users_business_id")
 }

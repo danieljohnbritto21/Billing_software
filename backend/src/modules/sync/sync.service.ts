@@ -4,12 +4,22 @@ import { SyncPullQuery, SyncPushBody } from './sync.schema';
 import { invoicesService } from '../invoices/invoices.service';
 import { paymentsService } from '../payments/payments.service';
 import { kotService } from '../kot/kot.service';
+import { ordersService } from '../orders/orders.service';
+import { purchasesService } from '../purchases/purchases.service';
 import { logger } from '../../utils/logger';
+import { AuthUser, normalizeRole } from '../../middleware/auth.middleware';
 
 export class SyncService {
-  async pullChanges(businessId: string, deviceId: string | undefined, query: SyncPullQuery) {
+  async pullChanges(
+    businessId: string,
+    deviceId: string | undefined,
+    query: SyncPullQuery,
+    authUser?: AuthUser
+  ) {
     const clientCursor = BigInt(query.cursor);
     const limit = query.limit;
+    const isSupplier = authUser && normalizeRole(authUser.role) === 'SUPPLIER';
+    const supplierId = authUser?.supplierId;
 
     // 1. Fetch from commit-safe sync_change_log ordered by cursor ASC
     const changeLogs = await prisma.sync_change_log.findMany({
@@ -32,7 +42,23 @@ export class SyncService {
     let nextCursor = clientCursor;
 
     for (const entry of changeLogs) {
-      nextCursor = entry.cursor; // Advance only to what is included
+      nextCursor = entry.cursor; // Advance only to what is processed
+
+      // If caller is a supplier, filter out sales and other suppliers' records
+      if (isSupplier) {
+        const supplierAllowedEntities = [
+          'categories',
+          'suppliers',
+          'products',
+          'purchase_orders',
+          'purchase_invoices',
+          'supplier_payments',
+        ];
+        if (!supplierAllowedEntities.includes(entry.entity_name)) {
+          // Do not send sales records to suppliers
+          continue;
+        }
+      }
 
       if (entry.operation === 'DELETE') {
         changes.push({
@@ -57,9 +83,22 @@ export class SyncService {
             (data as any).color_value = data.color_value >>> 0;
           }
           break;
+        case 'suppliers':
+          data = await prisma.suppliers.findFirst({
+            where: {
+              id: entry.record_id,
+              business_id: businessId,
+              ...(isSupplier && supplierId ? { id: supplierId } : {}),
+            },
+          });
+          break;
         case 'products':
           data = await prisma.products.findFirst({
-            where: { id: entry.record_id, business_id: businessId },
+            where: {
+              id: entry.record_id,
+              business_id: businessId,
+              ...(isSupplier && supplierId ? { supplier_id: supplierId } : {}),
+            },
             include: {
               categories: {
                 select: { name: true },
@@ -78,6 +117,14 @@ export class SyncService {
         case 'dining_tables':
           data = await prisma.dining_tables.findFirst({
             where: { id: entry.record_id, business_id: businessId },
+          });
+          break;
+        case 'orders':
+          data = await prisma.orders.findFirst({
+            where: { id: entry.record_id, business_id: businessId },
+            include: {
+              order_items: true,
+            },
           });
           break;
         case 'invoices':
@@ -105,6 +152,45 @@ export class SyncService {
             where: { id: entry.record_id },
           });
           break;
+        case 'kot_items':
+          data = await prisma.kot_items.findFirst({
+            where: { id: entry.record_id },
+          });
+          break;
+        case 'purchase_orders':
+          data = await prisma.purchase_orders.findFirst({
+            where: {
+              id: entry.record_id,
+              business_id: businessId,
+              ...(isSupplier && supplierId ? { supplier_id: supplierId } : {}),
+            },
+            include: {
+              purchase_order_items: true,
+            },
+          });
+          break;
+        case 'purchase_invoices':
+          data = await prisma.purchase_invoices.findFirst({
+            where: {
+              id: entry.record_id,
+              business_id: businessId,
+              ...(isSupplier && supplierId ? { supplier_id: supplierId } : {}),
+            },
+            include: {
+              purchase_invoice_items: true,
+              supplier_payments: true,
+            },
+          });
+          break;
+        case 'supplier_payments':
+          data = await prisma.supplier_payments.findFirst({
+            where: {
+              id: entry.record_id,
+              business_id: businessId,
+              ...(isSupplier && supplierId ? { supplier_id: supplierId } : {}),
+            },
+          });
+          break;
         case 'business_settings':
           data = await prisma.business_settings.findFirst({
             where: { id: entry.record_id, business_id: businessId },
@@ -114,16 +200,18 @@ export class SyncService {
           break;
       }
 
-      // If record was permanently removed or not found, mark as DELETE
+      // If record was permanently removed or not found (or filtered due to supplier ownership), mark or skip
       if (!data) {
-        changes.push({
-          cursor: entry.cursor,
-          entityName: entry.entity_name,
-          recordId: entry.record_id,
-          operation: 'DELETE',
-          data: null,
-          version: entry.record_version,
-        });
+        if (!isSupplier) {
+          changes.push({
+            cursor: entry.cursor,
+            entityName: entry.entity_name,
+            recordId: entry.record_id,
+            operation: 'DELETE',
+            data: null,
+            version: entry.record_version,
+          });
+        }
       } else {
         const isSoftDeleted = (data as any).deleted_at != null;
         changes.push({
@@ -138,7 +226,7 @@ export class SyncService {
     }
 
     // 4. Update device sync state if deviceId is provided
-    if (deviceId && changeLogs.length > 0) {
+    if (deviceId) {
       await prisma.device_sync_state.upsert({
         where: {
           device_id_entity_name: {
@@ -156,7 +244,7 @@ export class SyncService {
           last_pulled_version: nextCursor,
           last_pushed_at: new Date(),
         },
-      }).catch(() => {}); // non-blocking
+      }).catch(() => {});
     }
 
     const hasMore = nextCursor < latestServerCursor;
@@ -170,19 +258,48 @@ export class SyncService {
     };
   }
 
-  async pushChanges(businessId: string, verifiedDeviceId: string | undefined, data: SyncPushBody) {
+  async pushChanges(
+    businessId: string,
+    verifiedDeviceId: string | undefined,
+    data: SyncPushBody,
+    authUser?: AuthUser
+  ) {
     const results: any[] = [];
     const effectiveDeviceId = verifiedDeviceId || data.deviceId;
+    const isSupplier = authUser && normalizeRole(authUser.role) === 'SUPPLIER';
+    const supplierId = authUser?.supplierId;
 
-    for (const item of data.items) {
+    // Sort incoming items by dependency rank defensively so referenced parent records are created first
+    const ENTITY_DEPENDENCY_RANK: Record<string, number> = {
+      categories: 10,
+      suppliers: 20,
+      products: 30,
+      customers: 40,
+      dining_tables: 40,
+      orders: 50,
+      purchase_orders: 50,
+      invoices: 60,
+      purchase_invoices: 60,
+      payments: 70,
+      supplier_payments: 70,
+      kot_records: 70,
+    };
+
+    const sortedItems = [...data.items].sort(
+      (a, b) => (ENTITY_DEPENDENCY_RANK[a.entityName] ?? 99) - (ENTITY_DEPENDENCY_RANK[b.entityName] ?? 99)
+    );
+
+    for (const item of sortedItems) {
       try {
-        logger.info(`[SyncPush] Business=${businessId} Device=${effectiveDeviceId || 'unknown'} Entity=${item.entityName} Op=${item.operation} ID=${item.recordId}`);
+        logger.info(
+          `[SyncPush] Business=${businessId} Device=${effectiveDeviceId || 'unknown'} Entity=${item.entityName} Op=${item.operation} ID=${item.recordId}`
+        );
 
         switch (item.entityName) {
           case 'customers': {
             const p = item.payload;
             if (item.operation === 'INSERT' || item.operation === 'UPDATE') {
-              const customer = await prisma.customers.upsert({
+              await prisma.customers.upsert({
                 where: {
                   business_id_id: {
                     business_id: businessId,
@@ -208,12 +325,69 @@ export class SyncService {
             }
             break;
           }
+          case 'suppliers': {
+            // Suppliers can only be created/updated by Admin
+            if (isSupplier) {
+              results.push({
+                recordId: item.recordId,
+                status: 'error',
+                error: 'Forbidden: Suppliers cannot push supplier master records.',
+              });
+              continue;
+            }
+            const p = item.payload;
+            if (item.operation === 'INSERT' || item.operation === 'UPDATE') {
+              const saved = await prisma.suppliers.upsert({
+                where: {
+                  business_id_id: {
+                    business_id: businessId,
+                    id: item.recordId,
+                  },
+                },
+                update: {
+                  supplier_name: p.supplierName || p.supplier_name,
+                  contact_person: p.contactPerson || p.contact_person,
+                  phone_number: p.phoneNumber || p.phone_number,
+                  email: p.email,
+                  address: p.address,
+                  notes: p.notes,
+                  is_active: p.isActive ?? true,
+                },
+                create: {
+                  id: item.recordId,
+                  business_id: businessId,
+                  supplier_code: p.supplierCode || p.supplier_code || `SUP-${Date.now()}`,
+                  supplier_name: p.supplierName || p.supplier_name,
+                  contact_person: p.contactPerson || p.contact_person,
+                  phone_number: p.phoneNumber || p.phone_number,
+                  email: p.email,
+                  address: p.address,
+                  notes: p.notes,
+                  is_active: p.isActive ?? true,
+                },
+              });
+              results.push({ recordId: item.recordId, status: 'synced', entity: 'suppliers', serverVersion: saved.server_version?.toString() });
+            }
+            break;
+          }
           case 'products': {
             const p = item.payload;
-            // Check conflict if updating with a specified non-zero client version
             const existing = await prisma.products.findFirst({
               where: { id: item.recordId, business_id: businessId },
             });
+
+            // Supplier ownership check: If supplier, they cannot edit another supplier's product
+            if (isSupplier && supplierId) {
+              if (existing && existing.supplier_id !== supplierId) {
+                results.push({
+                  recordId: item.recordId,
+                  status: 'error',
+                  error: 'Forbidden: Cannot update product belonging to another supplier.',
+                });
+                continue;
+              }
+            }
+
             const clientVer = item.clientVersion !== undefined && item.clientVersion !== null ? BigInt(item.clientVersion) : null;
             if (
               existing &&
@@ -223,7 +397,6 @@ export class SyncService {
               existing.server_version &&
               existing.server_version > clientVer
             ) {
-              // Conflict detected!
               if (effectiveDeviceId) {
                 await prisma.sync_conflicts.create({
                   data: {
@@ -247,7 +420,6 @@ export class SyncService {
             }
 
             if (item.operation === 'INSERT' || item.operation === 'UPDATE') {
-              // Validate categoryId: Ensure category belongs to this business in PostgreSQL to avoid FK violation
               let resolvedCategoryId: string | null = null;
               if (p.categoryId) {
                 const catById = await prisma.categories.findFirst({
@@ -255,46 +427,22 @@ export class SyncService {
                 });
                 if (catById) {
                   resolvedCategoryId = catById.id;
-                } else {
-                  // Fallback: check if a category with the same name exists in this business (case-insensitive)
-                  const catName = p.categoryName || p.category_name;
-                  if (catName) {
-                    const catByName = await prisma.categories.findFirst({
-                      where: {
-                        name: { equals: catName, mode: 'insensitive' },
-                        business_id: businessId,
-                        deleted_at: null,
-                      },
-                    });
-                    if (catByName) {
-                      resolvedCategoryId = catByName.id;
-                    } else {
-                      // Category was created on device but hasn't reached PostgreSQL yet:
-                      // Create it to preserve category relationship across all devices
-                      try {
-                        const newCat = await prisma.categories.create({
-                          data: {
-                            id: p.categoryId,
-                            business_id: businessId,
-                            name: catName,
-                            is_active: true,
-                          },
-                        });
-                        resolvedCategoryId = newCat.id;
-                        logger.info(`[SyncPush:Product] Auto-created category "${catName}" (${p.categoryId}) for business ${businessId}`);
-                      } catch (catErr: any) {
-                        // Check if created concurrently
-                        const existingCat = await prisma.categories.findFirst({
-                          where: { id: p.categoryId, business_id: businessId },
-                        });
-                        if (existingCat) resolvedCategoryId = existingCat.id;
-                      }
-                    }
-                  }
                 }
-                if (!resolvedCategoryId) {
-                  logger.warn(`[SyncPush:Product] Category ${p.categoryId} not found for business ${businessId}. Setting category_id to null.`);
-                }
+              }
+
+              // Resolve product supplier_id
+              let resolvedSupplierId: string;
+              if (isSupplier && supplierId) {
+                resolvedSupplierId = supplierId;
+              } else if (p.supplierId) {
+                resolvedSupplierId = p.supplierId;
+              } else if (existing?.supplier_id) {
+                resolvedSupplierId = existing.supplier_id;
+              } else {
+                const defSup = await prisma.suppliers.findFirst({
+                  where: { business_id: businessId, supplier_code: 'SUP-DEFAULT' },
+                });
+                resolvedSupplierId = defSup ? defSup.id : randomUUID();
               }
 
               const savedProduct = await prisma.products.upsert({
@@ -306,6 +454,7 @@ export class SyncService {
                 },
                 update: {
                   category_id: resolvedCategoryId,
+                  supplier_id: resolvedSupplierId,
                   name: p.name,
                   code: p.code,
                   description: p.description,
@@ -321,6 +470,7 @@ export class SyncService {
                   id: item.recordId,
                   business_id: businessId,
                   category_id: resolvedCategoryId,
+                  supplier_id: resolvedSupplierId,
                   name: p.name,
                   code: p.code,
                   description: p.description,
@@ -340,7 +490,11 @@ export class SyncService {
               });
             } else if (item.operation === 'DELETE') {
               await prisma.products.updateMany({
-                where: { id: item.recordId, business_id: businessId },
+                where: {
+                  id: item.recordId,
+                  business_id: businessId,
+                  ...(isSupplier && supplierId ? { supplier_id: supplierId } : {}),
+                },
                 data: { deleted_at: new Date(), is_available: false },
               });
               results.push({ recordId: item.recordId, status: 'synced', entity: 'products' });
@@ -348,6 +502,14 @@ export class SyncService {
             break;
           }
           case 'categories': {
+            if (isSupplier) {
+              results.push({
+                recordId: item.recordId,
+                status: 'error',
+                error: 'Forbidden: Suppliers cannot manage categories.',
+              });
+              continue;
+            }
             const p = item.payload;
             const safeColor = p.colorValue !== undefined && p.colorValue !== null ? (Number(p.colorValue) | 0) : null;
             if (item.operation === 'INSERT' || item.operation === 'UPDATE') {
@@ -395,9 +557,7 @@ export class SyncService {
             const p = item.payload;
             if (item.operation === 'INSERT' || item.operation === 'UPDATE') {
               await prisma.dining_tables.upsert({
-                where: {
-                  id: item.recordId,
-                },
+                where: { id: item.recordId },
                 update: {
                   table_name: p.tableName,
                   seating_capacity: p.seatingCapacity ?? 4,
@@ -414,6 +574,19 @@ export class SyncService {
                 },
               });
               results.push({ recordId: item.recordId, status: 'synced', entity: 'dining_tables' });
+            }
+            break;
+          }
+          case 'orders': {
+            const p = item.payload;
+            if (item.operation === 'INSERT') {
+              const ord = await ordersService.createOrder(
+                businessId,
+                authUser?.userId || randomUUID(),
+                effectiveDeviceId,
+                p as any
+              );
+              results.push({ recordId: item.recordId, status: 'synced', entity: 'orders', orderId: ord.order.id });
             }
             break;
           }
@@ -435,6 +608,38 @@ export class SyncService {
             if (item.operation === 'INSERT') {
               const pay = await paymentsService.recordPayment(businessId, p as any);
               results.push({ recordId: item.recordId, status: 'synced', entity: 'payments', paymentId: pay?.id || item.recordId });
+            }
+            break;
+          }
+          case 'purchase_orders': {
+            const p = item.payload;
+            if (item.operation === 'INSERT') {
+              const po = await purchasesService.createPurchaseOrder(businessId, authUser?.userId || randomUUID(), p as any);
+              results.push({ recordId: item.recordId, status: 'synced', entity: 'purchase_orders', poId: po.order.id });
+            }
+            break;
+          }
+          case 'purchase_invoices': {
+            const p = item.payload;
+            if (item.operation === 'INSERT') {
+              const pi = await purchasesService.createPurchaseInvoice(businessId, p as any, isSupplier ? supplierId : undefined);
+              results.push({ recordId: item.recordId, status: 'synced', entity: 'purchase_invoices', piId: pi.invoice.id });
+            }
+            break;
+          }
+          case 'supplier_payments': {
+            if (isSupplier) {
+              results.push({
+                recordId: item.recordId,
+                status: 'error',
+                error: 'Forbidden: Suppliers cannot record supplier payments.',
+              });
+              continue;
+            }
+            const p = item.payload;
+            if (item.operation === 'INSERT') {
+              const sp = await purchasesService.recordSupplierPayment(businessId, authUser?.userId || randomUUID(), p as any);
+              results.push({ recordId: item.recordId, status: 'synced', entity: 'supplier_payments', paymentId: sp.id });
             }
             break;
           }

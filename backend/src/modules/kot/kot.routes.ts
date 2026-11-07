@@ -37,7 +37,7 @@ kotRouter.get(
 kotRouter.post(
   '/',
   requireAuth,
-  requireRole('cashier'),
+  requireRole('ADMIN'),
   validateBody(createKotSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -52,7 +52,7 @@ kotRouter.post(
 kotRouter.post(
   '/:id/reprint',
   requireAuth,
-  requireRole('cashier'),
+  requireRole('ADMIN'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const updated = await kotService.reprintKot(

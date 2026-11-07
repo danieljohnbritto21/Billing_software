@@ -11,11 +11,19 @@ part 'app_database.g.dart';
 
 @DriftDatabase(tables: [
   Categories,
+  Suppliers,
   Products,
+  Orders,
+  OrderItems,
   Invoices,
   InvoiceItems,
   BillNotes,
   Payments,
+  PurchaseOrders,
+  PurchaseOrderItems,
+  PurchaseInvoices,
+  PurchaseInvoiceItems,
+  SupplierPayments,
   Customers,
   AppSettings,
   ProductImages,
@@ -31,7 +39,7 @@ class AppDatabase extends _$AppDatabase {
       : super(e ?? openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   /// Creates a backup file of the SQLite database before running migrations
   static Future<void> backupDatabaseBeforeMigration() async {
@@ -108,6 +116,24 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(customers, customers.syncStatus);
 
             await m.addColumn(users, users.businessId);
+          }
+          if (from < 7) {
+            await backupDatabaseBeforeMigration();
+
+            // 1. Create new Admin + Supplier tables
+            await m.createTable(suppliers);
+            await m.createTable(orders);
+            await m.createTable(orderItems);
+            await m.createTable(purchaseOrders);
+            await m.createTable(purchaseOrderItems);
+            await m.createTable(purchaseInvoices);
+            await m.createTable(purchaseInvoiceItems);
+            await m.createTable(supplierPayments);
+
+            // 2. Add new columns to existing tables
+            await m.addColumn(products, products.supplierId);
+            await m.addColumn(invoices, invoices.orderId);
+            await m.addColumn(users, users.supplierId);
           }
         },
         beforeOpen: (details) async {

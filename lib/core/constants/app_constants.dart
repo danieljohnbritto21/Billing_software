@@ -29,6 +29,7 @@ class AppConstants {
   static const String paymentCard = 'Card';
   static const String paymentSplit = 'Split';
   static const String paymentDue = 'Credit/Due';
+  static const String paymentBankTransfer = 'Bank Transfer';
 
   static const List<String> paymentMethods = [
     paymentCash,
@@ -36,11 +37,13 @@ class AppConstants {
     paymentCard,
     paymentSplit,
     paymentDue,
+    paymentBankTransfer,
   ];
 
-  // Roles
+  // Roles - EXACTLY TWO ACTIVE APPLICATION ROLES: ADMIN and SUPPLIER
   static const String roleAdmin = 'admin';
-  static const String roleCashier = 'cashier';
+  static const String roleSupplier = 'supplier';
+  static const String roleCashier = 'cashier'; // Legacy reference strictly for rejection
 
   // Order Statuses
   static const String orderPending = 'Pending';
@@ -80,6 +83,18 @@ class AppConstants {
     orderTypeTakeaway,
     orderTypeDelivery,
   ];
+
+  // Purchase Order Statuses
+  static const String poStatusDraft = 'DRAFT';
+  static const String poStatusSent = 'SENT';
+  static const String poStatusPartiallyReceived = 'PARTIALLY_RECEIVED';
+  static const String poStatusReceived = 'RECEIVED';
+  static const String poStatusCancelled = 'CANCELLED';
+
+  // Purchase Invoice Verification Statuses
+  static const String piVerificationPending = 'PENDING_VERIFICATION';
+  static const String piVerificationApproved = 'APPROVED';
+  static const String piVerificationRejected = 'REJECTED';
 
   // Standard Restaurant Tables
   static const List<String> defaultTables = [

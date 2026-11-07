@@ -450,6 +450,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.print_outlined),
+                      label: const Text('Manage Thermal Printers & Hardware'),
+                      onPressed: () => context.push('/settings/printer'),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -515,7 +524,54 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           );
                         },
                       ),
-                      const Divider(height: 24),
+                      const Divider(height: 20),
+                      FutureBuilder<String>(
+                        future: ref.read(deviceServiceProvider).getDeviceCode(),
+                        builder: (context, devCodeSnap) {
+                          final devCode = devCodeSnap.data ?? '...';
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Terminal Identifier (Collision-Proof)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                  Text('Device Code: $devCode', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                                ],
+                              ),
+                              OutlinedButton(
+                                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4)),
+                                onPressed: () async {
+                                  final controller = TextEditingController(text: devCode);
+                                  final newCode = await showDialog<String>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Configure Terminal Code'),
+                                      content: TextField(
+                                        controller: controller,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Device Code (e.g. D1, POS1)',
+                                          hintText: 'D1',
+                                        ),
+                                      ),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                                        ElevatedButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('Save')),
+                                      ],
+                                    ),
+                                  );
+                                  if (newCode != null && newCode.isNotEmpty) {
+                                    await ref.read(deviceServiceProvider).setDeviceCode(newCode);
+                                    setState(() {});
+                                  }
+                                },
+                                child: const Text('Change Code'),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const Divider(height: 20),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [

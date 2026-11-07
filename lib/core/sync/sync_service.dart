@@ -65,12 +65,51 @@ class SyncService extends ChangeNotifier {
     _updatePendingCount();
   }
 
+  /// Calculates human-readable sync health status
+  String get syncHealth {
+    if (_state.status == SyncStatusType.error) return 'Error';
+    if (_state.status == SyncStatusType.offline) return 'Offline';
+    if (_state.pendingCount > 0) return 'Pending (${_state.pendingCount})';
+    return 'Healthy';
+  }
+
+  /// Strict dependency ordering rank:
+  /// Categories (10) -> Suppliers (20) -> Products (30) -> Customers/Tables (40) ->
+  /// Orders/PurchaseOrders (50) -> Invoices/PurchaseInvoices (60) -> Payments/SupplierPayments/KOT (70)
+  static int getEntityDependencyRank(String entity) {
+    switch (entity.toLowerCase()) {
+      case 'categories':
+        return 10;
+      case 'suppliers':
+        return 20;
+      case 'products':
+        return 30;
+      case 'customers':
+      case 'dining_tables':
+        return 40;
+      case 'orders':
+      case 'purchase_orders':
+        return 50;
+      case 'invoices':
+      case 'purchase_invoices':
+        return 60;
+      case 'payments':
+      case 'supplier_payments':
+      case 'kot_records':
+        return 70;
+      default:
+        return 80;
+    }
+  }
+
   void startAutoSync({Duration interval = const Duration(seconds: 30)}) {
     _autoSyncTimer?.cancel();
     _autoSyncTimer = Timer.periodic(interval, (_) {
       syncNow();
     });
   }
+
+  bool _isDisposed = false;
 
   void stopAutoSync() {
     _autoSyncTimer?.cancel();
@@ -79,14 +118,26 @@ class SyncService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
     stopAutoSync();
     super.dispose();
   }
 
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
+  }
+
   Future<void> _updatePendingCount() async {
-    final count = await _db.syncQueue.count().getSingle();
-    _state = _state.copyWith(pendingCount: count);
-    notifyListeners();
+    try {
+      final count = await _db.syncQueue.count().getSingle();
+      _state = _state.copyWith(pendingCount: count);
+      notifyListeners();
+    } catch (_) {
+      // Safely ignore if database is closed or shutting down
+    }
   }
 
   /// Enqueues a local entity creation, update, or deletion for offline synchronization
@@ -134,7 +185,6 @@ class SyncService extends ChangeNotifier {
 
     if (triggerSync) {
       await _updatePendingCount();
-      // Trigger sync immediately in background
       unawaited(syncNow());
     }
   }
@@ -147,7 +197,8 @@ class SyncService extends ChangeNotifier {
 
   /// Main two-way synchronization loop: pushes local changes then pulls remote changes
   Future<bool> syncNow() async {
-    if (_isSyncing) return false;
+    if (_isDisposed || _isSyncing) return false;
+
     if (_api.authToken == null || _api.authToken!.isEmpty) {
       await _api.restoreSavedAuth();
     }
@@ -162,7 +213,7 @@ class SyncService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Upload local queued changes
+      // 1. Upload local queued changes in dependency order
       await _pushLocalChanges();
 
       // 2. Download remote server changes strictly using commit-safe cursor
@@ -210,6 +261,14 @@ class SyncService extends ChangeNotifier {
 
     if (pendingItems.isEmpty) return;
 
+    // Strict dependency sorting: categories -> suppliers -> products -> customers -> orders -> invoices -> payments
+    pendingItems.sort((a, b) {
+      final rankA = getEntityDependencyRank(a.syncEntity);
+      final rankB = getEntityDependencyRank(b.syncEntity);
+      if (rankA != rankB) return rankA.compareTo(rankB);
+      return a.createdAt.compareTo(b.createdAt);
+    });
+
     final devId = await _deviceService.getOrGenerateDeviceUid();
     final itemsPayload = pendingItems.map((item) {
       return {
@@ -251,6 +310,26 @@ class SyncService extends ChangeNotifier {
                   syncStatus: const drift.Value('synced'),
                   serverVersion: sVer != null ? drift.Value(sVer) : const drift.Value.absent(),
                 ),
+              );
+            } else if (qItem.syncEntity == 'invoices') {
+              await (_db.update(_db.invoices)..where((i) => i.id.equals(qItem.recordId))).write(
+                const InvoicesCompanion(syncStatus: drift.Value('synced')),
+              );
+            } else if (qItem.syncEntity == 'payments') {
+              await (_db.update(_db.payments)..where((p) => p.id.equals(qItem.recordId))).write(
+                const PaymentsCompanion(syncStatus: drift.Value('synced')),
+              );
+            } else if (qItem.syncEntity == 'purchase_orders') {
+              await (_db.update(_db.purchaseOrders)..where((p) => p.id.equals(qItem.recordId))).write(
+                const PurchaseOrdersCompanion(syncStatus: drift.Value('synced')),
+              );
+            } else if (qItem.syncEntity == 'purchase_invoices') {
+              await (_db.update(_db.purchaseInvoices)..where((p) => p.id.equals(qItem.recordId))).write(
+                const PurchaseInvoicesCompanion(syncStatus: drift.Value('synced')),
+              );
+            } else if (qItem.syncEntity == 'supplier_payments') {
+              await (_db.update(_db.supplierPayments)..where((p) => p.id.equals(qItem.recordId))).write(
+                const SupplierPaymentsCompanion(syncStatus: drift.Value('synced')),
               );
             }
           } else if (r['status'] == 'conflict') {
@@ -382,7 +461,7 @@ class SyncService extends ChangeNotifier {
             CategoriesCompanion.insert(
               id: recordId,
               name: catName,
-              icon: drift.Value(d['icon']),
+              icon: drift.Value(d['icon'] ?? d['icon']),
               colorValue: drift.Value(d['color_value'] ?? d['colorValue']),
               isActive: drift.Value(d['is_active'] ?? d['isActive'] ?? true),
               displayOrder: drift.Value(d['display_order'] ?? d['displayOrder'] ?? 0),
@@ -449,6 +528,7 @@ class SyncService extends ChangeNotifier {
               name: d['name'] ?? '',
               code: drift.Value(d['code']),
               categoryId: drift.Value(resolvedCatId),
+              supplierId: drift.Value(d['supplier_id'] ?? d['supplierId']),
               description: drift.Value(d['description']),
               costPricePaise: drift.Value(costPaise),
               sellingPricePaise: sellPaise,
@@ -614,6 +694,123 @@ class SyncService extends ChangeNotifier {
               reprintCount: drift.Value(d['reprint_count'] ?? d['reprintCount'] ?? 0),
               createdAt: d['created_at'] != null ? DateTime.parse(d['created_at']) : DateTime.now(),
               serverVersion: drift.Value(version),
+              syncStatus: const drift.Value('synced'),
+            ),
+          );
+        }
+        break;
+
+      case 'suppliers':
+        if (isDelete || d == null) {
+          await (_db.update(_db.suppliers)..where((s) => s.id.equals(recordId))).write(
+            SuppliersCompanion(
+              deletedAt: drift.Value(DateTime.now()),
+              isActive: const drift.Value(false),
+            ),
+          );
+        } else {
+          await _db.into(_db.suppliers).insertOnConflictUpdate(
+            SuppliersCompanion.insert(
+              id: recordId,
+              businessId: bizId,
+              name: d['name'] ?? '',
+              contactPerson: drift.Value(d['contact_person'] ?? d['contactPerson']),
+              email: drift.Value(d['email']),
+              phone: drift.Value(d['phone']),
+              address: drift.Value(d['address']),
+              gstin: drift.Value(d['gstin']),
+              pan: drift.Value(d['pan']),
+              paymentTerms: drift.Value(d['payment_terms'] ?? d['paymentTerms']),
+              notes: drift.Value(d['notes']),
+              isActive: drift.Value(d['is_active'] ?? d['isActive'] ?? true),
+              isVerified: drift.Value(d['is_verified'] ?? d['isVerified'] ?? false),
+              createdAt: d['created_at'] != null ? DateTime.parse(d['created_at']) : DateTime.now(),
+              updatedAt: d['updated_at'] != null ? DateTime.parse(d['updated_at']) : DateTime.now(),
+              deletedAt: drift.Value(d['deleted_at'] != null ? DateTime.parse(d['deleted_at']) : null),
+              syncStatus: const drift.Value('synced'),
+            ),
+          );
+        }
+        break;
+
+      case 'purchase_orders':
+        if (isDelete || d == null) {
+          await (_db.update(_db.purchaseOrders)..where((p) => p.id.equals(recordId))).write(
+            PurchaseOrdersCompanion(
+              deletedAt: drift.Value(DateTime.now()),
+            ),
+          );
+        } else {
+          await _db.into(_db.purchaseOrders).insertOnConflictUpdate(
+            PurchaseOrdersCompanion.insert(
+              id: recordId,
+              businessId: bizId,
+              supplierId: d['supplier_id'] ?? d['supplierId'] ?? '',
+              poNumber: d['po_number'] ?? d['poNumber'] ?? 'PO',
+              orderStatus: drift.Value(d['order_status'] ?? d['orderStatus'] ?? 'DRAFT'),
+              subtotalPaise: int.tryParse(d['subtotal_paise']?.toString() ?? '0') ?? 0,
+              taxPaise: drift.Value(int.tryParse(d['tax_paise']?.toString() ?? '0') ?? 0),
+              grandTotalPaise: int.tryParse(d['grand_total_paise']?.toString() ?? '0') ?? 0,
+              notes: drift.Value(d['notes']),
+              expectedDeliveryDate: drift.Value(d['expected_delivery_date'] != null ? DateTime.tryParse(d['expected_delivery_date']) : null),
+              orderedAt: d['ordered_at'] != null ? DateTime.parse(d['ordered_at']) : DateTime.now(),
+              createdAt: d['created_at'] != null ? DateTime.parse(d['created_at']) : DateTime.now(),
+              updatedAt: d['updated_at'] != null ? DateTime.parse(d['updated_at']) : DateTime.now(),
+              syncStatus: const drift.Value('synced'),
+            ),
+          );
+        }
+        break;
+
+      case 'purchase_invoices':
+        if (isDelete || d == null) {
+          await (_db.update(_db.purchaseInvoices)..where((p) => p.id.equals(recordId))).write(
+            PurchaseInvoicesCompanion(
+              deletedAt: drift.Value(DateTime.now()),
+            ),
+          );
+        } else {
+          await _db.into(_db.purchaseInvoices).insertOnConflictUpdate(
+            PurchaseInvoicesCompanion.insert(
+              id: recordId,
+              businessId: bizId,
+              supplierId: d['supplier_id'] ?? d['supplierId'] ?? '',
+              purchaseOrderId: drift.Value(d['purchase_order_id'] ?? d['purchaseOrderId']),
+              invoiceNumber: d['invoice_number'] ?? d['invoiceNumber'] ?? 'INV',
+              verificationStatus: drift.Value(d['verification_status'] ?? d['verificationStatus'] ?? 'PENDING_VERIFICATION'),
+              paymentStatus: drift.Value(d['payment_status'] ?? d['paymentStatus'] ?? 'PENDING'),
+              subtotalPaise: int.tryParse(d['subtotal_paise']?.toString() ?? '0') ?? 0,
+              taxPaise: drift.Value(int.tryParse(d['tax_paise']?.toString() ?? '0') ?? 0),
+              grandTotalPaise: int.tryParse(d['grand_total_paise']?.toString() ?? '0') ?? 0,
+              amountPaidPaise: drift.Value(int.tryParse(d['amount_paid_paise']?.toString() ?? '0') ?? 0),
+              balanceDuePaise: drift.Value(int.tryParse(d['balance_due_paise']?.toString() ?? '0') ?? 0),
+              notes: drift.Value(d['notes']),
+              rejectionReason: drift.Value(d['rejection_reason'] ?? d['rejectionReason']),
+              invoiceDate: d['invoice_date'] != null ? DateTime.parse(d['invoice_date']) : DateTime.now(),
+              dueDate: drift.Value(d['due_date'] != null ? DateTime.tryParse(d['due_date']) : null),
+              createdAt: d['created_at'] != null ? DateTime.parse(d['created_at']) : DateTime.now(),
+              updatedAt: d['updated_at'] != null ? DateTime.parse(d['updated_at']) : DateTime.now(),
+              syncStatus: const drift.Value('synced'),
+            ),
+          );
+        }
+        break;
+
+      case 'supplier_payments':
+        if (!isDelete && d != null) {
+          await _db.into(_db.supplierPayments).insertOnConflictUpdate(
+            SupplierPaymentsCompanion.insert(
+              id: recordId,
+              businessId: bizId,
+              purchaseInvoiceId: d['purchase_invoice_id'] ?? d['purchaseInvoiceId'] ?? '',
+              supplierId: d['supplier_id'] ?? d['supplierId'] ?? '',
+              paymentVoucherNumber: d['payment_voucher_number'] ?? d['paymentVoucherNumber'] ?? 'PV',
+              amountPaise: int.tryParse(d['amount_paise']?.toString() ?? '0') ?? 0,
+              paymentMethod: drift.Value(d['payment_method'] ?? d['paymentMethod'] ?? 'Bank Transfer'),
+              paymentDate: d['payment_date'] != null ? DateTime.parse(d['payment_date']) : DateTime.now(),
+              referenceNumber: drift.Value(d['reference_number'] ?? d['referenceNumber']),
+              notes: drift.Value(d['notes']),
+              createdAt: d['created_at'] != null ? DateTime.parse(d['created_at']) : DateTime.now(),
               syncStatus: const drift.Value('synced'),
             ),
           );

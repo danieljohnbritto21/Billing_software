@@ -18,8 +18,15 @@ class AuthState {
   });
 
   bool get isAuthenticated => user != null;
-  bool get isAdmin => user != null && user!.role == AppConstants.roleAdmin;
-  bool get isCashier => user != null && user!.role == AppConstants.roleCashier;
+  bool get isAdmin =>
+      user != null && (user!.role.toLowerCase() == AppConstants.roleAdmin || user!.role == 'ADMIN');
+  bool get isSupplier =>
+      user != null &&
+      (user!.role.toLowerCase() == AppConstants.roleSupplier ||
+          user!.role == 'SUPPLIER' ||
+          user!.supplierId != null);
+  bool get isCashier =>
+      user != null && user!.role.toLowerCase() == AppConstants.roleCashier;
 
   AuthState copyWith({
     UserEntry? user,
@@ -40,12 +47,33 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final AuthRepository _repo;
   final SyncService? _sync;
 
-  AuthNotifier(this._repo, [ApiClient? api, this._sync]) : super(const AuthState());
+  AuthNotifier(this._repo, [ApiClient? api, this._sync]) : super(const AuthState()) {
+    // Attempt session restoration on startup
+    _tryRestoreSession();
+  }
 
-  Future<bool> login(String username, String password) async {
+  Future<void> _tryRestoreSession() async {
+    try {
+      final user = await _repo.restoreSession();
+      if (user != null) {
+        state = state.copyWith(user: user);
+        _sync?.syncNow();
+      }
+    } catch (_) {}
+  }
+
+  Future<bool> login(
+    String username,
+    String password, {
+    bool isSupplier = false,
+  }) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final user = await _repo.authenticate(username, password);
+      final user = await _repo.authenticate(
+        username,
+        password,
+        isSupplier: isSupplier,
+      );
       if (user != null) {
         state = state.copyWith(user: user, isLoading: false, clearError: true);
         // Automatically trigger sync on login
@@ -54,7 +82,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       } else {
         state = state.copyWith(
           isLoading: false,
-          error: 'Invalid username or password, or account is disabled.',
+          error: isSupplier
+              ? 'Invalid supplier credentials, or supplier account is inactive/unverified.'
+              : 'Invalid administrator credentials, or account is disabled.',
         );
         return false;
       }

@@ -3,11 +3,14 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { prisma } from '../config/prisma';
 
+export type AppRole = 'ADMIN' | 'SUPPLIER' | 'CASHIER_LEGACY' | 'admin' | 'cashier';
+
 export interface AuthUser {
   userId: string;
   businessId: string;
-  role: 'admin' | 'cashier';
+  role: AppRole;
   username: string;
+  supplierId?: string;
   deviceId?: string;
   sessionId?: string;
 }
@@ -21,6 +24,22 @@ declare global {
   }
 }
 
+/**
+ * Normalizes role string to canonical uppercase ('ADMIN' | 'SUPPLIER' | 'CASHIER_LEGACY')
+ */
+export function normalizeRole(role: string): 'ADMIN' | 'SUPPLIER' | 'CASHIER_LEGACY' | string {
+  const upper = role.toUpperCase();
+  if (upper === 'ADMIN' || upper === 'SUPPLIER' || upper === 'CASHIER_LEGACY') {
+    return upper;
+  }
+  if (role.toLowerCase() === 'admin') return 'ADMIN';
+  if (role.toLowerCase() === 'cashier') return 'CASHIER_LEGACY';
+  return upper;
+}
+
+/**
+ * Authenticates bearer JWT token
+ */
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -33,6 +52,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = authHeader.substring(7);
   try {
     const payload = jwt.verify(token, env.JWT_SECRET) as AuthUser;
+    const normalizedRole = normalizeRole(payload.role);
+    if (normalizedRole === 'CASHIER_LEGACY') {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: Cashier accounts are deprecated and permanently deactivated. Only Admin and Supplier accounts are active.',
+      });
+    }
     req.user = payload;
     return next();
   } catch (err: any) {
@@ -44,12 +70,19 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-export function requireRole(...allowedRoles: Array<'admin' | 'cashier'>) {
+export const authenticateToken = requireAuth;
+
+/**
+ * Requires one of the specified roles
+ */
+export function requireRole(...allowedRoles: Array<AppRole>) {
+  const canonicalAllowed = allowedRoles.map((r) => normalizeRole(r));
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
+      return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required.' });
     }
-    if (!allowedRoles.includes(req.user.role)) {
+    const userRole = normalizeRole(req.user.role);
+    if (!canonicalAllowed.includes(userRole)) {
       return res.status(403).json({
         success: false,
         error: `Forbidden: role '${req.user.role}' is not authorized to access this resource.`,
@@ -60,9 +93,126 @@ export function requireRole(...allowedRoles: Array<'admin' | 'cashier'>) {
 }
 
 /**
+ * Requires ADMIN role
+ */
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.user) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required.' });
+  }
+  const userRole = normalizeRole(req.user.role);
+  if (userRole !== 'ADMIN') {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden: Admin privilege required.',
+    });
+  }
+  return next();
+}
+
+/**
+ * Requires SUPPLIER role
+ */
+export function requireSupplier(req: Request, res: Response, next: NextFunction) {
+  if (!req.user) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required.' });
+  }
+  const userRole = normalizeRole(req.user.role);
+  if (userRole !== 'SUPPLIER') {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden: Supplier privilege required.',
+    });
+  }
+  if (!req.user.supplierId) {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden: Supplier account has no assigned supplier profile.',
+    });
+  }
+  return next();
+}
+
+/**
+ * Verifies that the authenticated user account is active in the database
+ */
+export async function requireActiveUser(req: Request, res: Response, next: NextFunction) {
+  if (!req.user) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required.' });
+  }
+  try {
+    const user = await prisma.users.findUnique({
+      where: { id: req.user.userId },
+      select: { id: true, is_active: true, deleted_at: true, role_id: true, business_id: true },
+    });
+    if (!user || !user.is_active || user.deleted_at !== null) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: User account is inactive or has been disabled.',
+      });
+    }
+    if (user.role_id === 'CASHIER_LEGACY') {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: Cashier role is deprecated. Only Admin and Supplier accounts are active.',
+      });
+    }
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/**
+ * Ensures authenticated user belongs to the requested business
+ */
+export function requireBusinessAccess(paramName = 'businessId') {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    const targetBusinessId = req.params[paramName] || req.body?.[paramName] || req.query?.[paramName];
+    if (targetBusinessId && targetBusinessId !== req.user.businessId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You do not have access to this business.',
+      });
+    }
+    return next();
+  };
+}
+
+/**
+ * Ensures a supplier can only access records owned by their authenticated supplierId.
+ * Admin users are granted access to all suppliers within their business.
+ */
+export function requireSupplierOwnership(paramName = 'supplierId') {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    const userRole = normalizeRole(req.user.role);
+    if (userRole === 'ADMIN') {
+      return next(); // Admins can manage all suppliers within their business
+    }
+    if (userRole === 'SUPPLIER') {
+      const targetSupplierId = req.params[paramName] || req.body?.[paramName];
+      if (targetSupplierId && targetSupplierId !== req.user.supplierId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden: Cross-supplier access is strictly prohibited.',
+        });
+      }
+      return next();
+    }
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden: Insufficient privileges.',
+    });
+  };
+}
+
+/**
  * Enforces strict device authorization and revocation checks on sensitive sync endpoints.
- * Never trusts a device ID supplied solely in the request body or headers.
- * Verifies JWT device binding, database existence, business ownership, and active authorization status.
  */
 export async function requireDeviceAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.user) {
@@ -72,7 +222,6 @@ export async function requireDeviceAuth(req: Request, res: Response, next: NextF
     });
   }
 
-  // 1. Authenticated device ID must be present in the cryptographic JWT token
   const tokenDeviceId = req.user.deviceId;
   if (!tokenDeviceId) {
     return res.status(403).json({
@@ -82,7 +231,6 @@ export async function requireDeviceAuth(req: Request, res: Response, next: NextF
   }
 
   try {
-    // 2. Fetch authoritative device record from database
     const device = await prisma.devices.findUnique({
       where: { id: tokenDeviceId },
     });
@@ -94,7 +242,6 @@ export async function requireDeviceAuth(req: Request, res: Response, next: NextF
       });
     }
 
-    // 3. Verify device belongs to the authenticated business
     if (device.business_id !== req.user.businessId) {
       return res.status(403).json({
         success: false,
@@ -102,7 +249,6 @@ export async function requireDeviceAuth(req: Request, res: Response, next: NextF
       });
     }
 
-    // 4. Verify device authorization status (reject unauthorized or revoked devices)
     if (!device.is_authorized) {
       return res.status(403).json({
         success: false,
@@ -110,7 +256,6 @@ export async function requireDeviceAuth(req: Request, res: Response, next: NextF
       });
     }
 
-    // 5. Anti-spoofing: If client supplies deviceId in body or header, it MUST match the authenticated token device
     const bodyDeviceId = req.body?.deviceId;
     const headerDeviceId = req.headers['x-device-id'] as string | undefined;
 
@@ -128,7 +273,6 @@ export async function requireDeviceAuth(req: Request, res: Response, next: NextF
       });
     }
 
-    // 6. If session ID is present in JWT, verify that the session has not been revoked
     if (req.user.sessionId) {
       const session = await prisma.user_sessions.findUnique({
         where: { id: req.user.sessionId },
@@ -141,7 +285,6 @@ export async function requireDeviceAuth(req: Request, res: Response, next: NextF
       }
     }
 
-    // Attach verified device to request context
     req.device = device;
     return next();
   } catch (err: any) {
@@ -149,3 +292,4 @@ export async function requireDeviceAuth(req: Request, res: Response, next: NextF
   }
 }
 
+export const requireDeviceAuthorization = requireDeviceAuth;

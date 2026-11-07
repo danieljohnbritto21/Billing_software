@@ -19,6 +19,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isSupplierPortal = false;
 
   @override
   void dispose() {
@@ -35,11 +36,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     final success = await ref
         .read(authProvider.notifier)
-        .login(username, password);
+        .login(username, password, isSupplier: _isSupplierPortal);
 
     if (success && mounted) {
       final user = ref.read(authProvider).user;
-      if (user?.role == AppConstants.roleAdmin) {
+      if (user?.role == AppConstants.roleSupplier) {
+        context.go('/supplier/dashboard');
+      } else if (user?.role == AppConstants.roleAdmin) {
         context.go('/dashboard');
       } else {
         context.go('/billing');
@@ -47,8 +50,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  void _fillCredentials(String username, String password) {
+  void _fillCredentials(String username, String password, {bool isSupplier = false}) {
     setState(() {
+      _isSupplierPortal = isSupplier;
       _usernameController.text = username;
       _passwordController.text = password;
     });
@@ -87,22 +91,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           width: 68,
                           height: 68,
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF2E7D32), Color(0xFF43A047)],
+                            gradient: LinearGradient(
+                              colors: _isSupplierPortal
+                                  ? [Colors.indigo.shade700, Colors.indigo.shade500]
+                                  : [const Color(0xFF2E7D32), const Color(0xFF43A047)],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
                             borderRadius: BorderRadius.circular(18),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.green.withValues(alpha: 0.3),
+                                color: (_isSupplierPortal ? Colors.indigo : Colors.green).withValues(alpha: 0.3),
                                 blurRadius: 16,
                                 offset: const Offset(0, 6),
                               ),
                             ],
                           ),
-                          child: const Icon(
-                            Icons.point_of_sale_rounded,
+                          child: Icon(
+                            _isSupplierPortal ? Icons.storefront_rounded : Icons.point_of_sale_rounded,
                             size: 38,
                             color: Colors.white,
                           ),
@@ -111,10 +117,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       const SizedBox(height: 20),
 
                       // Title
-                      const Center(
+                      Center(
                         child: Text(
                           AppConstants.appName,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w900,
                             letterSpacing: -0.5,
@@ -123,10 +129,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Center(
+                      Center(
                         child: Text(
-                          'Restaurant & POS Billing System',
-                          style: TextStyle(
+                          _isSupplierPortal ? 'Vendor & Procurement Portal' : 'Store POS & Procurement Architecture',
+                          style: const TextStyle(
                             fontSize: 13,
                             color: Color(0xFF64748B),
                             fontWeight: FontWeight.w500,
@@ -134,6 +140,105 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 20),
+
+                      // Role Switcher Tabs (Store Admin vs Supplier Portal)
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        padding: const EdgeInsets.all(4),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  setState(() => _isSupplierPortal = false);
+                                  ref.read(authProvider.notifier).clearError();
+                                },
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: !_isSupplierPortal ? Colors.white : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                    boxShadow: !_isSupplierPortal
+                                        ? [const BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))]
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.admin_panel_settings_outlined,
+                                        size: 16,
+                                        color: !_isSupplierPortal ? AppTheme.primaryGreen : const Color(0xFF64748B),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          'Store Admin',
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: !_isSupplierPortal ? AppTheme.primaryGreen : const Color(0xFF64748B),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  setState(() => _isSupplierPortal = true);
+                                  ref.read(authProvider.notifier).clearError();
+                                },
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: _isSupplierPortal ? Colors.white : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                    boxShadow: _isSupplierPortal
+                                        ? [const BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))]
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.storefront_outlined,
+                                        size: 16,
+                                        color: _isSupplierPortal ? Colors.indigo : const Color(0xFF64748B),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          'Supplier Portal',
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: _isSupplierPortal ? Colors.indigo : const Color(0xFF64748B),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
                       // Server Endpoint Configuration Bar
                       FutureBuilder<String>(
@@ -180,8 +285,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       // Error Banner if login failed
                       if (authState.error != null) ...[
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           decoration: BoxDecoration(
                             color: const Color(0xFFFEE2E2),
                             borderRadius: BorderRadius.circular(10),
@@ -189,8 +293,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.error_outline,
-                                  color: Color(0xFFDC2626), size: 20),
+                              const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 20),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
@@ -208,29 +311,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         const SizedBox(height: 18),
                       ],
 
-                      // Username field
+                      // Username / Email field
                       TextFormField(
                         controller: _usernameController,
                         decoration: InputDecoration(
-                          labelText: 'Username',
-                          hintText: 'Enter your username',
-                          prefixIcon: const Icon(Icons.person_outline_rounded),
+                          labelText: _isSupplierPortal ? 'Supplier Username or Email' : 'Admin Username',
+                          hintText: _isSupplierPortal ? 'Enter vendor portal username' : 'Enter admin username',
+                          prefixIcon: Icon(_isSupplierPortal ? Icons.business_outlined : Icons.person_outline_rounded),
                           filled: true,
                           fillColor: const Color(0xFFF8FAFC),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide:
-                                const BorderSide(color: Color(0xFFCBD5E1)),
+                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide:
-                                const BorderSide(color: Color(0xFFE2E8F0)),
+                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                                color: AppTheme.primaryGreen, width: 2),
+                            borderSide: BorderSide(
+                              color: _isSupplierPortal ? Colors.indigo : AppTheme.primaryGreen,
+                              width: 2,
+                            ),
                           ),
                         ),
                         validator: (v) {
@@ -252,9 +355,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           prefixIcon: const Icon(Icons.lock_outline_rounded),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _obscurePassword
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
+                              _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
                               color: const Color(0xFF64748B),
                             ),
                             onPressed: () {
@@ -267,18 +368,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           fillColor: const Color(0xFFF8FAFC),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide:
-                                const BorderSide(color: Color(0xFFCBD5E1)),
+                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide:
-                                const BorderSide(color: Color(0xFFE2E8F0)),
+                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                                color: AppTheme.primaryGreen, width: 2),
+                            borderSide: BorderSide(
+                              color: _isSupplierPortal ? Colors.indigo : AppTheme.primaryGreen,
+                              width: 2,
+                            ),
                           ),
                         ),
                         validator: (v) {
@@ -295,10 +396,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       SizedBox(
                         height: 48,
                         child: ElevatedButton(
-                          onPressed:
-                              authState.isLoading ? null : _handleLogin,
+                          onPressed: authState.isLoading ? null : _handleLogin,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primaryGreen,
+                            backgroundColor: _isSupplierPortal ? Colors.indigo : AppTheme.primaryGreen,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
@@ -311,13 +411,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   height: 22,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2.5,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white),
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                   ),
                                 )
-                              : const Text(
-                                  'Sign In',
-                                  style: TextStyle(
+                              : Text(
+                                  _isSupplierPortal ? 'Enter Supplier Portal' : 'Sign In as Admin',
+                                  style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -359,23 +458,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   ),
                                   label: const Text('Admin (admin123)'),
                                   backgroundColor: Colors.white,
-                                  side: const BorderSide(
-                                      color: Color(0xFFCBD5E1)),
-                                  onPressed: () =>
-                                      _fillCredentials('admin', 'admin123'),
+                                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                  onPressed: () => _fillCredentials('admin', 'admin123', isSupplier: false),
                                 ),
                                 ActionChip(
                                   avatar: const Icon(
-                                    Icons.badge_rounded,
+                                    Icons.storefront_rounded,
                                     size: 16,
-                                    color: Color(0xFF1E293B),
+                                    color: Colors.indigo,
                                   ),
-                                  label: const Text('Cashier (cashier123)'),
+                                  label: const Text('Supplier (supplier123)'),
                                   backgroundColor: Colors.white,
-                                  side: const BorderSide(
-                                      color: Color(0xFFCBD5E1)),
-                                  onPressed: () => _fillCredentials(
-                                      'cashier', 'cashier123'),
+                                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                  onPressed: () => _fillCredentials('supplier', 'supplier123', isSupplier: true),
                                 ),
                               ],
                             ),

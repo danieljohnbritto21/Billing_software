@@ -18,10 +18,36 @@ class Categories extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+@DataClassName('SupplierEntry')
+class Suppliers extends Table {
+  TextColumn get id => text()();
+  TextColumn get businessId => text()();
+  TextColumn get name => text().withLength(min: 1, max: 150)();
+  TextColumn get contactPerson => text().nullable()();
+  TextColumn get email => text().nullable()();
+  TextColumn get phone => text().nullable()();
+  TextColumn get address => text().nullable()();
+  TextColumn get gstin => text().nullable()();
+  TextColumn get pan => text().nullable()();
+  TextColumn get paymentTerms => text().nullable()();
+  TextColumn get notes => text().nullable()();
+  BoolColumn get isActive => boolean().withDefault(const Constant(true))();
+  BoolColumn get isVerified => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  Int64Column get serverVersion => int64().nullable()();
+  TextColumn get syncStatus => text().nullable().withDefault(const Constant('synced'))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DataClassName('ProductEntry')
 class Products extends Table {
   TextColumn get id => text()();
   TextColumn get businessId => text().nullable()();
+  TextColumn get supplierId => text().nullable().references(Suppliers, #id)();
   TextColumn get name => text().withLength(min: 1, max: 150)();
   TextColumn get code => text().nullable()(); // SKU or barcode
   TextColumn get categoryId => text().nullable().references(Categories, #id)();
@@ -43,10 +69,69 @@ class Products extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+@DataClassName('OrderEntry')
+class Orders extends Table {
+  TextColumn get id => text()();
+  TextColumn get businessId => text()();
+  TextColumn get orderNumber => text()();
+  TextColumn get createdByUserId => text().nullable()();
+  TextColumn get deviceId => text().nullable()();
+  TextColumn get diningTableId => text().nullable()();
+  TextColumn get orderType => text().withDefault(const Constant('Dine In'))();
+  TextColumn get orderStatus => text().withDefault(const Constant('Active'))();
+  IntColumn get subtotalPaise => integer()();
+  IntColumn get itemDiscountPaise => integer().withDefault(const Constant(0))();
+  IntColumn get billDiscountPaise => integer().withDefault(const Constant(0))();
+  IntColumn get taxableAmountPaise => integer()();
+  IntColumn get totalTaxPaise => integer().withDefault(const Constant(0))();
+  IntColumn get cgstPaise => integer().withDefault(const Constant(0))();
+  IntColumn get sgstPaise => integer().withDefault(const Constant(0))();
+  IntColumn get grandTotalPaise => integer()();
+  IntColumn get amountPaidPaise => integer().withDefault(const Constant(0))();
+  IntColumn get balanceDuePaise => integer().withDefault(const Constant(0))();
+  TextColumn get paymentStatus => text().withDefault(const Constant('Pending'))();
+  TextColumn get notes => text().nullable()();
+  DateTimeColumn get orderedAt => dateTime()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  Int64Column get serverVersion => int64().nullable()();
+  TextColumn get syncStatus => text().nullable().withDefault(const Constant('synced'))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClassName('OrderItemEntry')
+class OrderItems extends Table {
+  TextColumn get id => text()();
+  TextColumn get businessId => text()();
+  TextColumn get orderId => text().references(Orders, #id)();
+  TextColumn get productId => text().nullable()();
+  TextColumn get supplierId => text().nullable()();
+  TextColumn get productNameSnapshot => text()();
+  TextColumn get productCodeSnapshot => text().nullable()();
+  RealColumn get quantity => real()();
+  TextColumn get unit => text().withDefault(const Constant('plate'))();
+  IntColumn get unitPricePaise => integer()();
+  IntColumn get discountPaise => integer().withDefault(const Constant(0))();
+  RealColumn get gstPercentageSnapshot => real().withDefault(const Constant(0.0))();
+  IntColumn get taxableAmountPaise => integer()();
+  IntColumn get taxAmountPaise => integer()();
+  IntColumn get totalAmountPaise => integer()();
+  TextColumn get specialInstructions => text().nullable()();
+  Int64Column get serverVersion => int64().nullable()();
+  TextColumn get syncStatus => text().nullable().withDefault(const Constant('synced'))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DataClassName('InvoiceEntry')
 class Invoices extends Table {
   TextColumn get id => text()();
   TextColumn get businessId => text().nullable()();
+  TextColumn get orderId => text().nullable()();
   TextColumn get deviceId => text().nullable()();
   TextColumn get customerId => text().nullable()();
   TextColumn get invoiceNumber => text().customConstraint('NOT NULL UNIQUE')();
@@ -137,6 +222,124 @@ class Payments extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+@DataClassName('PurchaseOrderEntry')
+class PurchaseOrders extends Table {
+  TextColumn get id => text()();
+  TextColumn get businessId => text()();
+  TextColumn get supplierId => text().references(Suppliers, #id)();
+  TextColumn get poNumber => text()();
+  TextColumn get orderStatus => text().withDefault(const Constant('DRAFT'))(); // 'DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'
+  IntColumn get subtotalPaise => integer()();
+  IntColumn get taxPaise => integer().withDefault(const Constant(0))();
+  IntColumn get discountPaise => integer().withDefault(const Constant(0))();
+  IntColumn get grandTotalPaise => integer()();
+  TextColumn get notes => text().nullable()();
+  DateTimeColumn get expectedDeliveryDate => dateTime().nullable()();
+  DateTimeColumn get orderedAt => dateTime()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  Int64Column get serverVersion => int64().nullable()();
+  TextColumn get syncStatus => text().nullable().withDefault(const Constant('synced'))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClassName('PurchaseOrderItemEntry')
+class PurchaseOrderItems extends Table {
+  TextColumn get id => text()();
+  TextColumn get purchaseOrderId => text().references(PurchaseOrders, #id)();
+  TextColumn get productId => text().nullable()();
+  TextColumn get productName => text()();
+  TextColumn get productCode => text().nullable()();
+  RealColumn get quantity => real()();
+  RealColumn get receivedQuantity => real().withDefault(const Constant(0.0))();
+  TextColumn get unit => text().withDefault(const Constant('unit'))();
+  IntColumn get unitPricePaise => integer()();
+  RealColumn get gstRatePercent => real().withDefault(const Constant(0.0))();
+  IntColumn get taxableAmountPaise => integer()();
+  IntColumn get taxAmountPaise => integer()();
+  IntColumn get totalAmountPaise => integer()();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClassName('PurchaseInvoiceEntry')
+class PurchaseInvoices extends Table {
+  TextColumn get id => text()();
+  TextColumn get businessId => text()();
+  TextColumn get supplierId => text().references(Suppliers, #id)();
+  TextColumn get purchaseOrderId => text().nullable()();
+  TextColumn get invoiceNumber => text()();
+  TextColumn get verificationStatus => text().withDefault(const Constant('PENDING_VERIFICATION'))(); // 'PENDING_VERIFICATION', 'APPROVED', 'REJECTED'
+  TextColumn get rejectionReason => text().nullable()();
+  TextColumn get verifiedByUserId => text().nullable()();
+  DateTimeColumn get verifiedAt => dateTime().nullable()();
+  IntColumn get subtotalPaise => integer()();
+  IntColumn get taxPaise => integer().withDefault(const Constant(0))();
+  IntColumn get discountPaise => integer().withDefault(const Constant(0))();
+  IntColumn get grandTotalPaise => integer()();
+  IntColumn get amountPaidPaise => integer().withDefault(const Constant(0))();
+  IntColumn get balanceDuePaise => integer().withDefault(const Constant(0))();
+  TextColumn get paymentStatus => text().withDefault(const Constant('PENDING'))(); // 'PENDING', 'PARTIALLY_PAID', 'PAID'
+  DateTimeColumn get invoiceDate => dateTime()();
+  DateTimeColumn get dueDate => dateTime().nullable()();
+  TextColumn get notes => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  Int64Column get serverVersion => int64().nullable()();
+  TextColumn get syncStatus => text().nullable().withDefault(const Constant('synced'))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClassName('PurchaseInvoiceItemEntry')
+class PurchaseInvoiceItems extends Table {
+  TextColumn get id => text()();
+  TextColumn get purchaseInvoiceId => text().references(PurchaseInvoices, #id)();
+  TextColumn get productId => text().nullable()();
+  TextColumn get productName => text()();
+  TextColumn get productCode => text().nullable()();
+  RealColumn get quantity => real()();
+  TextColumn get unit => text().withDefault(const Constant('unit'))();
+  IntColumn get unitPricePaise => integer()();
+  RealColumn get gstRatePercent => real().withDefault(const Constant(0.0))();
+  IntColumn get taxableAmountPaise => integer()();
+  IntColumn get taxAmountPaise => integer()();
+  IntColumn get totalAmountPaise => integer()();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClassName('SupplierPaymentEntry')
+class SupplierPayments extends Table {
+  TextColumn get id => text()();
+  TextColumn get businessId => text()();
+  TextColumn get purchaseInvoiceId => text().references(PurchaseInvoices, #id)();
+  TextColumn get supplierId => text().references(Suppliers, #id)();
+  TextColumn get paymentVoucherNumber => text()();
+  IntColumn get amountPaise => integer()();
+  TextColumn get paymentMethod => text().withDefault(const Constant('Bank Transfer'))();
+  DateTimeColumn get paymentDate => dateTime()();
+  TextColumn get referenceNumber => text().nullable()();
+  TextColumn get notes => text().nullable()();
+  TextColumn get recordedByUserId => text().nullable()();
+  TextColumn get idempotencyKey => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  Int64Column get serverVersion => int64().nullable()();
+  TextColumn get syncStatus => text().nullable().withDefault(const Constant('synced'))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DataClassName('CustomerEntry')
 class Customers extends Table {
   TextColumn get id => text()();
@@ -180,9 +383,10 @@ class ProductImages extends Table {
 class Users extends Table {
   TextColumn get id => text()();
   TextColumn get businessId => text().nullable()();
+  TextColumn get supplierId => text().nullable()();
   TextColumn get username => text().customConstraint('NOT NULL UNIQUE')();
   TextColumn get fullName => text()();
-  TextColumn get role => text()(); // 'admin' or 'cashier'
+  TextColumn get role => text()(); // 'admin' or 'supplier'
   TextColumn get passwordHash => text()();
   TextColumn get salt => text()();
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();

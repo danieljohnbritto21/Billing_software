@@ -28,6 +28,11 @@ export class UsersService {
       throw new AppError(409, 'Username already exists in this business');
     }
 
+    const canonicalRole = data.role.toUpperCase();
+    if (canonicalRole === 'CASHIER_LEGACY' || canonicalRole === 'CASHIER') {
+      throw new AppError(400, 'Cashier role is deprecated. Only Admin and Supplier accounts are active.');
+    }
+
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(data.password, salt);
 
@@ -36,7 +41,7 @@ export class UsersService {
         business_id: businessId,
         username: data.username,
         full_name: data.fullName,
-        role_id: data.role,
+        role_id: canonicalRole,
         password_hash: passwordHash,
         salt,
         is_active: true,

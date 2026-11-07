@@ -31,6 +31,7 @@ class ApiClient {
   String? _authToken;
   String? _businessId;
   String? _deviceId;
+  String? _supplierId;
   String? _cachedBaseUrl;
 
   ApiClient(this._db, [http.Client? client]) : _client = client ?? http.Client();
@@ -98,15 +99,21 @@ class ApiClient {
         final uri = Uri.parse(testUrl);
         final response = await _client.get(uri).timeout(const Duration(seconds: 6));
         stopwatch.stop();
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          return {
-            'success': true,
-            'latencyMs': stopwatch.elapsedMilliseconds,
-            'status': data['status'] ?? 'UP',
-            'database': data['database'] ?? 'connected',
-            'testedUrl': testUrl,
-          };
+
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          try {
+            final data = jsonDecode(response.body);
+            return {
+              'success': true,
+              'latencyMs': stopwatch.elapsedMilliseconds,
+              'data': data,
+            };
+          } catch (_) {
+            return {
+              'success': true,
+              'latencyMs': stopwatch.elapsedMilliseconds,
+            };
+          }
         } else {
           lastError = 'HTTP ${response.statusCode}: ${response.reasonPhrase}';
         }
@@ -136,6 +143,10 @@ class ApiClient {
       if (devSetting != null && devSetting.value.isNotEmpty) {
         _deviceId = devSetting.value;
       }
+      final suppSetting = await (_db.select(_db.appSettings)..where((s) => s.key.equals('supplier_id'))).getSingleOrNull();
+      if (suppSetting != null && suppSetting.value.isNotEmpty) {
+        _supplierId = suppSetting.value;
+      }
     } catch (_) {}
   }
 
@@ -156,6 +167,12 @@ class ApiClient {
   }
 
   String? get deviceId => _deviceId;
+
+  void setSupplierId(String? suppId) {
+    _supplierId = suppId;
+  }
+
+  String? get supplierId => _supplierId;
 
   Future<Map<String, String>> _headers({String? idempotencyKey}) async {
     if (_authToken == null || _authToken!.isEmpty) {
@@ -189,12 +206,12 @@ class ApiClient {
     try {
       final response = await _client
           .get(uri, headers: await _headers())
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 25));
       return _handleResponse(response);
     } on SocketException catch (e) {
       throw NetworkException('Connection failed: ${e.message}');
     } on TimeoutException {
-      throw NetworkException('Request timed out after 15 seconds.');
+      throw NetworkException('Request timed out. Please check network connection.');
     }
   }
 
@@ -225,6 +242,26 @@ class ApiClient {
     try {
       final response = await _client
           .put(
+            uri,
+            headers: await _headers(),
+            body: body != null ? jsonEncode(body) : null,
+          )
+          .timeout(const Duration(seconds: 25));
+      return _handleResponse(response);
+    } on SocketException catch (e) {
+      throw NetworkException('Connection failed: ${e.message}');
+    } on TimeoutException {
+      throw NetworkException('Request timed out.');
+    }
+  }
+
+  Future<dynamic> patch(String path, {dynamic body}) async {
+    final base = await getBaseUrl();
+    final uri = Uri.parse('$base$path');
+
+    try {
+      final response = await _client
+          .patch(
             uri,
             headers: await _headers(),
             body: body != null ? jsonEncode(body) : null,

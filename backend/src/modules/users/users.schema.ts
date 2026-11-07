@@ -4,7 +4,7 @@ export const createStaffUserSchema = z.object({
   username: z.string().min(3).max(60),
   password: z.string().min(6).max(100),
   fullName: z.string().min(2).max(120),
-  role: z.enum(['cashier', 'admin']).default('cashier'),
+  role: z.enum(['ADMIN', 'SUPPLIER', 'admin', 'supplier']).default('ADMIN'),
 });
 
 export const updateUserStatusSchema = z.object({

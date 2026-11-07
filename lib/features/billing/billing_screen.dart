@@ -13,6 +13,7 @@ import '../invoices/invoice_repository.dart';
 import '../printer/invoice_pdf_generator.dart';
 import '../products/product_repository.dart';
 import '../settings/settings_repository.dart';
+import '../../core/sync/sync_provider.dart';
 import 'cart_provider.dart';
 
 final billingSearchProvider = StateProvider<String>((ref) => '');
@@ -422,10 +423,13 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
     try {
       final invoiceRepo = ref.read(invoiceRepositoryProvider);
+      final devService = ref.read(deviceServiceProvider);
+      final deviceCode = await devService.getDeviceCode();
+      final deviceId = await devService.getDeviceId();
       final settings = await ref.read(settingsRepositoryProvider).getAllSettings();
       final prefix = settings['invoice_prefix'] ?? 'INV-';
       final invoiceNumber =
-          await invoiceRepo.generateNextInvoiceNumber(prefix: prefix);
+          await invoiceRepo.generateNextInvoiceNumber(prefix: prefix, deviceCode: deviceCode);
 
       final uuid = const Uuid();
       final invoiceId = uuid.v4();
@@ -460,6 +464,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         paymentStatus: drift.Value(paymentStatus),
         paidAmountPaise: cart.paidAmountPaise,
         orderStatus: const drift.Value(AppConstants.orderCompleted),
+        deviceId: drift.Value(deviceId),
         cashierId: drift.Value(currentUser?.id),
         cashierName: drift.Value(currentUser?.fullName ?? currentUser?.username ?? 'Cashier'),
       );

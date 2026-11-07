@@ -19,5 +19,14 @@ export const loginSchema = z.object({
   deviceName: z.string().max(100).optional(),
 });
 
+export const supplierLoginSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+  businessId: z.string().uuid().optional(),
+  deviceUid: z.string().max(128).optional(),
+  deviceName: z.string().max(100).optional(),
+});
+
 export type RegisterBusinessInput = z.infer<typeof registerBusinessSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type SupplierLoginInput = z.infer<typeof supplierLoginSchema>;

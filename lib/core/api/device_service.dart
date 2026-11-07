@@ -38,7 +38,7 @@ class DeviceService {
 
   DeviceService(this._db, this._api);
 
-  /// Retrieves or generates a persistent device UUID for this physical phone
+  /// Retrieves or generates a persistent device UUID for this physical terminal
   Future<String> getOrGenerateDeviceUid() async {
     final existing = await (_db.select(_db.appSettings)..where((s) => s.key.equals('device_uid'))).getSingleOrNull();
     if (existing != null && existing.value.isNotEmpty) {
@@ -52,6 +52,32 @@ class DeviceService {
     );
     _api.setDeviceId(newUid);
     return newUid;
+  }
+
+  /// Alias for getOrGenerateDeviceUid
+  Future<String> getDeviceId() => getOrGenerateDeviceUid();
+
+  /// Returns the configured short device code (e.g. 'D1', 'POS1') for collision-resistant offline numbering.
+  /// If not configured, generates a deterministic code from the persistent device UUID.
+  Future<String> getDeviceCode() async {
+    final existing = await (_db.select(_db.appSettings)..where((s) => s.key.equals('device_code'))).getSingleOrNull();
+    if (existing != null && existing.value.trim().isNotEmpty) {
+      return existing.value.trim();
+    }
+    final uid = await getOrGenerateDeviceUid();
+    final short = uid.replaceAll('-', '').substring(0, 3).toUpperCase();
+    final defaultCode = 'D$short';
+    await _db.into(_db.appSettings).insertOnConflictUpdate(
+      AppSettingsCompanion.insert(key: 'device_code', value: defaultCode),
+    );
+    return defaultCode;
+  }
+
+  Future<void> setDeviceCode(String code) async {
+    final cleanCode = code.trim().replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '').toUpperCase();
+    await _db.into(_db.appSettings).insertOnConflictUpdate(
+      AppSettingsCompanion.insert(key: 'device_code', value: cleanCode.isEmpty ? 'D1' : cleanCode),
+    );
   }
 
   Future<String> getDeviceName() async {

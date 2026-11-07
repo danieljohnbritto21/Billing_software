@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const createProductSchema = z.object({
   id: z.string().uuid().optional(),
   categoryId: z.string().uuid().nullable().optional(),
+  supplierId: z.string().uuid().optional(),
   name: z.string().min(1).max(150),
   code: z.string().max(60).optional(),
   description: z.string().optional(),
@@ -17,6 +18,10 @@ export const createProductSchema = z.object({
 
 export const updateProductSchema = createProductSchema.partial();
 
+export const updateProductStatusSchema = z.object({
+  isAvailable: z.boolean(),
+});
+
 export const uploadProductImageSchema = z.object({
   id: z.string().uuid().optional(),
   imageBase64: z.string().min(10),
@@ -28,5 +33,5 @@ export const uploadProductImageSchema = z.object({
 
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
+export type UpdateProductStatusInput = z.infer<typeof updateProductStatusSchema>;
 export type UploadProductImageInput = z.infer<typeof uploadProductImageSchema>;
-

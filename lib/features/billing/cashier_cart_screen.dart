@@ -11,6 +11,7 @@ import '../auth/auth_provider.dart';
 import '../invoices/invoice_repository.dart';
 import '../printer/invoice_pdf_generator.dart';
 import '../settings/settings_repository.dart';
+import '../../core/sync/sync_provider.dart';
 import 'cart_provider.dart';
 
 class CashierCartScreen extends ConsumerStatefulWidget {
@@ -748,7 +749,12 @@ class _CashierCartScreenState extends ConsumerState<CashierCartScreen> {
 
       final savedInvoiceId = await invoiceRepo.saveOrUpdatePendingOrder(
         existingInvoiceId: cart.pendingInvoiceId,
-        invoiceNumber: cart.existingInvoiceNumber,
+        invoiceNumber: cart.existingInvoiceNumber ??
+            await invoiceRepo.generateNextInvoiceNumber(
+              prefix: 'ORD-',
+              deviceCode: await ref.read(deviceServiceProvider).getDeviceCode(),
+            ),
+        deviceId: await ref.read(deviceServiceProvider).getDeviceId(),
         customerName: _customerNameController.text.trim().isEmpty ? null : _customerNameController.text.trim(),
         customerPhone: _customerPhoneController.text.trim().isEmpty ? null : _customerPhoneController.text.trim(),
         orderType: cart.orderType,
@@ -1143,7 +1149,14 @@ class _CashierCartScreenState extends ConsumerState<CashierCartScreen> {
           : (paidAmountPaise > 0 ? AppConstants.statusPartial : AppConstants.statusPending);
 
       final invoiceId = cart.pendingInvoiceId ?? _uuid.v4();
-      final invoiceNumber = cart.existingInvoiceNumber ?? await invoiceRepo.generateNextInvoiceNumber();
+      final devService = ref.read(deviceServiceProvider);
+      final deviceCode = await devService.getDeviceCode();
+      final devId = await devService.getDeviceId();
+      final invoiceNumber = cart.existingInvoiceNumber ??
+          await invoiceRepo.generateNextInvoiceNumber(
+            prefix: settings['invoice_prefix'] ?? 'INV-',
+            deviceCode: deviceCode,
+          );
 
       final itemsCompanions = cart.items.map((ci) {
         final tax = ci.taxCalculation;
@@ -1195,6 +1208,7 @@ class _CashierCartScreenState extends ConsumerState<CashierCartScreen> {
           grandTotalPaise: cart.grandTotalPaise,
           cashierId: currentUser?.id ?? 'cashier',
           cashierName: currentUser?.fullName ?? 'Cashier',
+          deviceId: devId,
           billNote: cart.billNote,
           items: itemsCompanions,
         );
@@ -1229,6 +1243,7 @@ class _CashierCartScreenState extends ConsumerState<CashierCartScreen> {
               paymentMethod: drift.Value(paymentMethod),
               paymentStatus: drift.Value(paymentStatus),
               orderStatus: const drift.Value(AppConstants.orderCompleted),
+              deviceId: drift.Value(devId),
               cashierId: drift.Value(currentUser?.id),
               cashierName: drift.Value(currentUser?.fullName),
             ),
