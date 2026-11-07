@@ -8,6 +8,13 @@ import '../auth/auth_provider.dart';
 import '../products/product_repository.dart';
 import '../purchases/purchase_repository.dart';
 
+int _parseInt(dynamic val, [int fallback = 0]) {
+  if (val == null) return fallback;
+  if (val is int) return val;
+  if (val is num) return val.toInt();
+  return int.tryParse(val.toString()) ?? fallback;
+}
+
 class SupplierDashboardScreen extends ConsumerStatefulWidget {
   const SupplierDashboardScreen({super.key});
 
@@ -51,13 +58,13 @@ class _SupplierDashboardScreenState extends ConsumerState<SupplierDashboardScree
     final purchaseRepo = ref.watch(purchaseRepositoryProvider);
     final productRepo = ref.watch(productRepositoryProvider);
 
-    final outstandingPaise = _ledgerSummary?['outstandingBalancePaise'] ?? 0;
-    final totalBilledPaise = _ledgerSummary?['totalBilledPaise'] ?? 0;
-    final totalPaidPaise = _ledgerSummary?['totalPaidPaise'] ?? 0;
+    final outstandingPaise = _parseInt(_ledgerSummary?['outstandingBalancePaise'] ?? _ledgerSummary?['totalOutstandingPaise']);
+    final totalBilledPaise = _parseInt(_ledgerSummary?['totalBilledPaise']);
+    final totalPaidPaise = _parseInt(_ledgerSummary?['totalPaidPaise']);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Supplier Portal'),
+        title: const Text('Dashboard Overview'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -308,6 +315,18 @@ class _SupplierDashboardScreenState extends ConsumerState<SupplierDashboardScree
             StreamBuilder<List<PurchaseOrderEntry>>(
               stream: purchaseRepo.watchPurchaseOrders(supplierId: supplierId),
               builder: (context, snap) {
+                if (snap.hasError) {
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Center(child: Text('Orders status: ${snap.error}')),
+                  );
+                }
+
                 final orders = snap.data ?? [];
                 if (orders.isEmpty) {
                   return Container(

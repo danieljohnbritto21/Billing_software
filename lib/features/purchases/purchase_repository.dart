@@ -14,6 +14,13 @@ final purchaseRepositoryProvider = Provider<PurchaseRepository>((ref) {
   return PurchaseRepository(db, api, sync);
 });
 
+int _parseInt(dynamic val, [int fallback = 0]) {
+  if (val == null) return fallback;
+  if (val is int) return val;
+  if (val is num) return val.toInt();
+  return int.tryParse(val.toString()) ?? fallback;
+}
+
 class PurchaseRepository {
   final AppDatabase _db;
   final ApiClient? _api;
@@ -443,15 +450,29 @@ class PurchaseRepository {
         'totalBilledPaise': 0,
         'totalPaidPaise': 0,
         'outstandingBalancePaise': 0,
+        'totalOutstandingPaise': 0,
         'approvedInvoiceCount': 0,
         'pendingInvoiceCount': 0,
+        'invoiceCount': 0,
       };
     }
 
     try {
       final res = await api.get('/supplier/outstanding-balance');
       if (res is Map<String, dynamic>) {
-        return res;
+        final totalBilled = _parseInt(res['totalBilledPaise']);
+        final totalPaid = _parseInt(res['totalPaidPaise']);
+        final outstanding = _parseInt(res['totalOutstandingPaise'] ?? res['outstandingBalancePaise']);
+        final invoiceCount = _parseInt(res['invoiceCount']);
+        return {
+          'totalBilledPaise': totalBilled,
+          'totalPaidPaise': totalPaid,
+          'outstandingBalancePaise': outstanding,
+          'totalOutstandingPaise': outstanding,
+          'approvedInvoiceCount': invoiceCount,
+          'pendingInvoiceCount': 0,
+          'invoiceCount': invoiceCount,
+        };
       }
     } catch (_) {}
 
@@ -459,8 +480,10 @@ class PurchaseRepository {
       'totalBilledPaise': 0,
       'totalPaidPaise': 0,
       'outstandingBalancePaise': 0,
+      'totalOutstandingPaise': 0,
       'approvedInvoiceCount': 0,
       'pendingInvoiceCount': 0,
+      'invoiceCount': 0,
     };
   }
 
@@ -482,9 +505,9 @@ class PurchaseRepository {
         final supplierId = item['supplier_id']?.toString() ?? item['supplierId']?.toString() ?? '';
         final poNumber = item['po_number']?.toString() ?? item['poNumber']?.toString() ?? 'PO';
         final orderStatus = item['order_status']?.toString() ?? item['orderStatus']?.toString() ?? 'DRAFT';
-        final subtotal = (item['subtotal_paise'] ?? item['subtotalPaise'] ?? 0) as int;
-        final tax = (item['tax_paise'] ?? item['taxPaise'] ?? 0) as int;
-        final grandTotal = (item['grand_total_paise'] ?? item['grandTotalPaise'] ?? 0) as int;
+        final subtotal = _parseInt(item['subtotal_paise'] ?? item['subtotalPaise']);
+        final tax = _parseInt(item['tax_paise'] ?? item['taxPaise']);
+        final grandTotal = _parseInt(item['grand_total_paise'] ?? item['grandTotalPaise']);
         final notes = item['notes']?.toString();
         final expectedDelivery = item['expected_delivery_date'] != null
             ? DateTime.parse(item['expected_delivery_date'])
@@ -535,11 +558,11 @@ class PurchaseRepository {
         final invoiceNum = item['invoice_number']?.toString() ?? item['invoiceNumber']?.toString() ?? 'INV';
         final verStatus = item['verification_status']?.toString() ?? item['verificationStatus']?.toString() ?? 'PENDING_VERIFICATION';
         final payStatus = item['payment_status']?.toString() ?? item['paymentStatus']?.toString() ?? 'PENDING';
-        final subtotal = (item['subtotal_paise'] ?? item['subtotalPaise'] ?? 0) as int;
-        final tax = (item['tax_paise'] ?? item['taxPaise'] ?? 0) as int;
-        final grandTotal = (item['grand_total_paise'] ?? item['grandTotalPaise'] ?? 0) as int;
-        final paid = (item['amount_paid_paise'] ?? item['amountPaidPaise'] ?? 0) as int;
-        final due = (item['balance_due_paise'] ?? item['balanceDuePaise'] ?? (grandTotal - paid)) as int;
+        final subtotal = _parseInt(item['subtotal_paise'] ?? item['subtotalPaise']);
+        final tax = _parseInt(item['tax_paise'] ?? item['taxPaise']);
+        final grandTotal = _parseInt(item['grand_total_paise'] ?? item['grandTotalPaise']);
+        final paid = _parseInt(item['amount_paid_paise'] ?? item['amountPaidPaise']);
+        final due = _parseInt(item['balance_due_paise'] ?? item['balanceDuePaise'], grandTotal - paid);
         final notes = item['notes']?.toString();
         final rejReason = item['rejection_reason']?.toString() ?? item['rejectionReason']?.toString();
         final invDate = item['invoice_date'] != null
@@ -594,7 +617,7 @@ class PurchaseRepository {
         final supplierId = item['supplier_id']?.toString() ?? item['supplierId']?.toString() ?? '';
         final invId = item['purchase_invoice_id']?.toString() ?? item['purchaseInvoiceId']?.toString() ?? '';
         final voucher = item['payment_voucher_number']?.toString() ?? item['paymentVoucherNumber']?.toString() ?? 'PV';
-        final amount = (item['amount_paise'] ?? item['amountPaise'] ?? 0) as int;
+        final amount = _parseInt(item['amount_paise'] ?? item['amountPaise']);
         final method = item['payment_method']?.toString() ?? item['paymentMethod']?.toString() ?? 'Bank Transfer';
         final refNum = item['reference_number']?.toString() ?? item['referenceNumber']?.toString();
         final notes = item['notes']?.toString();

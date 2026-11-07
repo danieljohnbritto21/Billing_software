@@ -6,6 +6,13 @@ import '../../core/sync/sync_provider.dart';
 import '../auth/auth_provider.dart';
 import '../purchases/purchase_repository.dart';
 
+int _parseInt(dynamic val, [int fallback = 0]) {
+  if (val == null) return fallback;
+  if (val is int) return val;
+  if (val is num) return val.toInt();
+  return int.tryParse(val.toString()) ?? fallback;
+}
+
 class SupplierLedgerScreen extends ConsumerStatefulWidget {
   const SupplierLedgerScreen({super.key});
 
@@ -46,9 +53,9 @@ class _SupplierLedgerScreenState extends ConsumerState<SupplierLedgerScreen> {
     final supplierId = ref.watch(apiClientProvider).supplierId ?? user?.supplierId ?? '';
     final purchaseRepo = ref.watch(purchaseRepositoryProvider);
 
-    final outstanding = _summary?['outstandingBalancePaise'] ?? 0;
-    final totalBilled = _summary?['totalBilledPaise'] ?? 0;
-    final totalPaid = _summary?['totalPaidPaise'] ?? 0;
+    final outstanding = _parseInt(_summary?['outstandingBalancePaise'] ?? _summary?['totalOutstandingPaise']);
+    final totalBilled = _parseInt(_summary?['totalBilledPaise']);
+    final totalPaid = _parseInt(_summary?['totalPaidPaise']);
 
     return Scaffold(
       appBar: AppBar(
@@ -127,6 +134,18 @@ class _SupplierLedgerScreenState extends ConsumerState<SupplierLedgerScreen> {
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()));
+                }
+
+                if (snap.hasError) {
+                  return Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Center(child: Text('Payment history status: ${snap.error}')),
+                  );
                 }
 
                 final payments = snap.data ?? [];
