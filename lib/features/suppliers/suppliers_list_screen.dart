@@ -116,7 +116,7 @@ class _SuppliersListScreenState extends ConsumerState<SuppliersListScreen> {
                         const SizedBox(height: 16),
                         Text(
                           search.isNotEmpty
-                              ? 'No suppliers match \"$search\"'
+                              ? 'No suppliers match "$search"'
                               : 'No suppliers registered yet',
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                         ),
@@ -174,7 +174,7 @@ class _SupplierCard extends ConsumerWidget {
               // Avatar
               CircleAvatar(
                 backgroundColor: supplier.isActive
-                    ? AppTheme.primaryGreen.withOpacity(0.12)
+                    ? AppTheme.primaryGreen.withValues(alpha: 0.12)
                     : Colors.grey.shade200,
                 radius: 24,
                 child: Icon(

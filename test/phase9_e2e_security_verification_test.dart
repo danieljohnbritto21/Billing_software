@@ -509,14 +509,14 @@ void main() {
   // =========================================================================
   group('Phase 9.5 - Multi-Device Collision-Resistant Invoice Numbering', () {
     test('5.1 Two offline terminals generate completely distinct, collision-free invoice sequences', () async {
-      final pos1_inv1 = await invoiceRepo.generateNextInvoiceNumber(prefix: 'INV-', deviceCode: 'POS1');
-      expect(pos1_inv1, equals('INV-POS1-00001'));
+      final pos1Inv1 = await invoiceRepo.generateNextInvoiceNumber(prefix: 'INV-', deviceCode: 'POS1');
+      expect(pos1Inv1, equals('INV-POS1-00001'));
 
       final now = DateTime.now();
       await db.into(db.invoices).insert(
         InvoicesCompanion.insert(
           id: uuid.v4(),
-          invoiceNumber: pos1_inv1,
+          invoiceNumber: pos1Inv1,
           createdAt: now,
           subtotalPaise: 10000,
           taxableAmountPaise: 10000,
@@ -526,16 +526,16 @@ void main() {
         ),
       );
 
-      final pos1_inv2 = await invoiceRepo.generateNextInvoiceNumber(prefix: 'INV-', deviceCode: 'POS1');
-      expect(pos1_inv2, equals('INV-POS1-00002'));
+      final pos1Inv2 = await invoiceRepo.generateNextInvoiceNumber(prefix: 'INV-', deviceCode: 'POS1');
+      expect(pos1Inv2, equals('INV-POS1-00002'));
 
-      final pos2_inv1 = await invoiceRepo.generateNextInvoiceNumber(prefix: 'INV-', deviceCode: 'POS2');
-      expect(pos2_inv1, equals('INV-POS2-00001'));
+      final pos2Inv1 = await invoiceRepo.generateNextInvoiceNumber(prefix: 'INV-', deviceCode: 'POS2');
+      expect(pos2Inv1, equals('INV-POS2-00001'));
 
       await db.into(db.invoices).insert(
         InvoicesCompanion.insert(
           id: uuid.v4(),
-          invoiceNumber: pos2_inv1,
+          invoiceNumber: pos2Inv1,
           createdAt: now,
           subtotalPaise: 20000,
           taxableAmountPaise: 20000,
@@ -545,11 +545,11 @@ void main() {
         ),
       );
 
-      final pos2_inv2 = await invoiceRepo.generateNextInvoiceNumber(prefix: 'INV-', deviceCode: 'POS2');
-      expect(pos2_inv2, equals('INV-POS2-00002'));
+      final pos2Inv2 = await invoiceRepo.generateNextInvoiceNumber(prefix: 'INV-', deviceCode: 'POS2');
+      expect(pos2Inv2, equals('INV-POS2-00002'));
 
-      expect(pos1_inv1, isNot(equals(pos2_inv1)));
-      expect(pos1_inv2, isNot(equals(pos2_inv2)));
+      expect(pos1Inv1, isNot(equals(pos2Inv1)));
+      expect(pos1Inv2, isNot(equals(pos2Inv2)));
     });
 
     test('5.2 Database uniquely enforces invoice number constraint against duplicate writes', () async {

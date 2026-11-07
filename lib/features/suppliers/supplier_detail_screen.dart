@@ -130,7 +130,7 @@ class _SupplierDetailScreenState extends ConsumerState<SupplierDetailScreen>
                           children: [
                             CircleAvatar(
                               radius: 28,
-                              backgroundColor: AppTheme.primaryGreen.withOpacity(0.12),
+                              backgroundColor: AppTheme.primaryGreen.withValues(alpha: 0.12),
                               child: const Icon(Icons.storefront, color: AppTheme.primaryGreen, size: 30),
                             ),
                             const SizedBox(width: 16),

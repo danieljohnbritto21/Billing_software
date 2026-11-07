@@ -6,6 +6,7 @@ import '../../core/sync/sync_provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/server_connection_dialog.dart';
 import 'auth_provider.dart';
+import 'auth_repository.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -20,6 +21,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isSupplierPortal = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Ensure default initial users (admin and demo supplier) are seeded
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(authRepositoryProvider).seedInitialUsersIfEmpty();
+    });
+  }
 
   @override
   void dispose() {
@@ -121,8 +131,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         child: Text(
                           AppConstants.appName,
                           style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
                             letterSpacing: -0.5,
                             color: Color(0xFF1E293B),
                           ),
@@ -131,40 +141,48 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       const SizedBox(height: 6),
                       Center(
                         child: Text(
-                          _isSupplierPortal ? 'Vendor & Procurement Portal' : 'Store POS & Procurement Architecture',
+                          _isSupplierPortal
+                              ? 'Vendor & Procurement Portal'
+                              : 'Fast & Reliable Offline-First Billing',
                           style: const TextStyle(
-                            fontSize: 13,
+                            fontSize: 14,
                             color: Color(0xFF64748B),
-                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 28),
 
-                      // Role Switcher Tabs (Store Admin vs Supplier Portal)
+                      // Portal Toggle Switch (Store Admin vs Supplier Portal)
                       Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
                         padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE2E8F0),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                         child: Row(
                           children: [
                             Expanded(
                               child: InkWell(
+                                borderRadius: BorderRadius.circular(10),
                                 onTap: () {
-                                  setState(() => _isSupplierPortal = false);
+                                  setState(() {
+                                    _isSupplierPortal = false;
+                                  });
                                   ref.read(authProvider.notifier).clearError();
                                 },
-                                borderRadius: BorderRadius.circular(8),
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
                                   decoration: BoxDecoration(
                                     color: !_isSupplierPortal ? Colors.white : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(10),
                                     boxShadow: !_isSupplierPortal
-                                        ? [const BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))]
+                                        ? [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(alpha: 0.05),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ]
                                         : null,
                                   ),
                                   child: Row(
@@ -172,19 +190,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(
-                                        Icons.admin_panel_settings_outlined,
-                                        size: 16,
-                                        color: !_isSupplierPortal ? AppTheme.primaryGreen : const Color(0xFF64748B),
+                                        Icons.point_of_sale_rounded,
+                                        size: 18,
+                                        color: !_isSupplierPortal ? const Color(0xFF2E7D32) : const Color(0xFF64748B),
                                       ),
                                       const SizedBox(width: 6),
                                       Flexible(
                                         child: Text(
                                           'Store Admin',
+                                          maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
-                                            fontWeight: FontWeight.bold,
                                             fontSize: 13,
-                                            color: !_isSupplierPortal ? AppTheme.primaryGreen : const Color(0xFF64748B),
+                                            fontWeight: !_isSupplierPortal ? FontWeight.bold : FontWeight.w500,
+                                            color: !_isSupplierPortal ? const Color(0xFF1E293B) : const Color(0xFF64748B),
                                           ),
                                         ),
                                       ),
@@ -195,18 +214,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                             Expanded(
                               child: InkWell(
+                                borderRadius: BorderRadius.circular(10),
                                 onTap: () {
-                                  setState(() => _isSupplierPortal = true);
+                                  setState(() {
+                                    _isSupplierPortal = true;
+                                  });
                                   ref.read(authProvider.notifier).clearError();
                                 },
-                                borderRadius: BorderRadius.circular(8),
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
                                   decoration: BoxDecoration(
                                     color: _isSupplierPortal ? Colors.white : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(10),
                                     boxShadow: _isSupplierPortal
-                                        ? [const BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))]
+                                        ? [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(alpha: 0.05),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ]
                                         : null,
                                   ),
                                   child: Row(
@@ -214,19 +241,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(
-                                        Icons.storefront_outlined,
-                                        size: 16,
+                                        Icons.storefront_rounded,
+                                        size: 18,
                                         color: _isSupplierPortal ? Colors.indigo : const Color(0xFF64748B),
                                       ),
                                       const SizedBox(width: 6),
                                       Flexible(
                                         child: Text(
                                           'Supplier Portal',
+                                          maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
-                                            fontWeight: FontWeight.bold,
                                             fontSize: 13,
-                                            color: _isSupplierPortal ? Colors.indigo : const Color(0xFF64748B),
+                                            fontWeight: _isSupplierPortal ? FontWeight.bold : FontWeight.w500,
+                                            color: _isSupplierPortal ? const Color(0xFF1E293B) : const Color(0xFF64748B),
                                           ),
                                         ),
                                       ),
@@ -238,54 +266,76 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
 
-                      // Server Endpoint Configuration Bar
+                      // Server Connection Badge / Configurator
                       FutureBuilder<String>(
-                        future: ref.read(apiClientProvider).getBaseUrl(),
+                        future: ref.watch(apiClientProvider).getBaseUrl(),
                         builder: (context, snapshot) {
-                          final currentUrl = snapshot.data ?? 'Checking server...';
-                          return InkWell(
-                            onTap: () async {
-                              final updated = await ServerConnectionDialog.show(context);
-                              if (updated == true && mounted) {
-                                setState(() {});
-                              }
-                            },
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                          final currentUrl = snapshot.data ?? 'Checking...';
+                          final isRender = currentUrl.contains('onrender.com');
+
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isRender ? const Color(0xFFECFDF5) : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isRender ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0),
                               ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.cloud_sync_outlined, size: 16, color: Color(0xFF64748B)),
-                                  const SizedBox(width: 8),
-                                  Expanded(
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.sync_alt_rounded,
+                                  size: 16,
+                                  color: isRender ? const Color(0xFF059669) : const Color(0xFF64748B),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Server: $currentUrl',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: isRender ? const Color(0xFF065F46) : const Color(0xFF475569),
+                                      fontFamily: 'monospace',
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (ctx) => const ServerConnectionDialog(),
+                                    ).then((_) => setState(() {}));
+                                  },
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                                     child: Text(
-                                      'Server: $currentUrl',
-                                      style: const TextStyle(fontSize: 11, color: Color(0xFF475569), fontWeight: FontWeight.w500),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                      'Edit',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: isRender ? const Color(0xFF059669) : AppTheme.primaryGreen,
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(width: 4),
-                                  const Text('Edit', style: TextStyle(fontSize: 11, color: AppTheme.primaryGreen, fontWeight: FontWeight.bold)),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           );
                         },
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
 
-                      // Error Banner if login failed
-                      if (authState.error != null) ...[
+                      // Error Banner
+                      if (authState.error != null)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          margin: const EdgeInsets.only(bottom: 20),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: const Color(0xFFFEE2E2),
                             borderRadius: BorderRadius.circular(10),
@@ -293,7 +343,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 20),
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                color: Color(0xFFDC2626),
+                                size: 20,
+                              ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
@@ -301,43 +355,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   style: const TextStyle(
                                     color: Color(0xFF991B1B),
                                     fontSize: 13,
-                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 18),
-                      ],
 
-                      // Username / Email field
+                      // Username Field
                       TextFormField(
                         controller: _usernameController,
                         decoration: InputDecoration(
-                          labelText: _isSupplierPortal ? 'Supplier Username or Email' : 'Admin Username',
-                          hintText: _isSupplierPortal ? 'Enter vendor portal username' : 'Enter admin username',
-                          prefixIcon: Icon(_isSupplierPortal ? Icons.business_outlined : Icons.person_outline_rounded),
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: _isSupplierPortal ? Colors.indigo : AppTheme.primaryGreen,
-                              width: 2,
-                            ),
+                          labelText: _isSupplierPortal ? 'Supplier Username or Email' : 'Username',
+                          hintText: _isSupplierPortal ? 'Enter supplier username' : 'Enter username',
+                          prefixIcon: Icon(
+                            _isSupplierPortal ? Icons.business_rounded : Icons.person_outline_rounded,
                           ),
                         ),
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) {
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
                             return 'Please enter username';
                           }
                           return null;
@@ -345,18 +381,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Password field
+                      // Password Field
                       TextFormField(
                         controller: _passwordController,
                         obscureText: _obscurePassword,
                         decoration: InputDecoration(
                           labelText: 'Password',
-                          hintText: 'Enter your password',
+                          hintText: 'Enter password',
                           prefixIcon: const Icon(Icons.lock_outline_rounded),
                           suffixIcon: IconButton(
                             icon: Icon(
                               _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                              color: const Color(0xFF64748B),
                             ),
                             onPressed: () {
                               setState(() {
@@ -364,37 +399,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               });
                             },
                           ),
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                              color: _isSupplierPortal ? Colors.indigo : AppTheme.primaryGreen,
-                              width: 2,
-                            ),
-                          ),
                         ),
-                        validator: (v) {
-                          if (v == null || v.isEmpty) {
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
                             return 'Please enter password';
                           }
                           return null;
                         },
-                        onFieldSubmitted: (_) => _handleLogin(),
                       ),
                       const SizedBox(height: 24),
 
                       // Sign In Button
                       SizedBox(
-                        height: 48,
+                        height: 50,
                         child: ElevatedButton(
                           onPressed: authState.isLoading ? null : _handleLogin,
                           style: ElevatedButton.styleFrom(

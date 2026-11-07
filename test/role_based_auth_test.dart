@@ -45,6 +45,13 @@ void main() {
       expect(cashier!.role, equals(AppConstants.roleCashier));
       expect(cashier.username, equals('cashier'));
       expect(cashier.isActive, isTrue);
+
+      final supplier = await authRepo.authenticate('supplier', 'supplier123', isSupplier: true);
+      expect(supplier, isNotNull);
+      expect(supplier!.role, equals(AppConstants.roleSupplier));
+      expect(supplier.username, equals('supplier'));
+      expect(supplier.supplierId, equals('demo-supplier-01'));
+      expect(supplier.isActive, isTrue);
     });
 
     test('Login fails for invalid password and non-existent username', () async {

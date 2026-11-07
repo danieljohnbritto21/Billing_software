@@ -177,7 +177,7 @@ class AuthRepository {
       ..where((u) {
         final baseFilter = u.username.lower().equals(cleanUsername) & u.isActive.equals(true);
         if (isSupplier) {
-          return baseFilter & u.role.equals(AppConstants.roleSupplier);
+          return baseFilter & (u.role.lower().equals(AppConstants.roleSupplier) | u.supplierId.isNotNull());
         } else {
           return baseFilter & u.role.equals(AppConstants.roleSupplier).not() & u.role.equals('cashier_legacy').not();
         }
@@ -189,6 +189,12 @@ class AuthRepository {
     if (_verifyPassword(password, user.passwordHash, user.salt)) {
       if (api != null) {
         await api.restoreSavedAuth();
+        if (user.supplierId != null) {
+          api.setSupplierId(user.supplierId);
+          await _db.into(_db.appSettings).insertOnConflictUpdate(
+            AppSettingsCompanion.insert(key: 'supplier_id', value: user.supplierId!),
+          );
+        }
       }
       return user;
     }
@@ -264,13 +270,13 @@ class AuthRepository {
         .go();
   }
 
-  /// Seeds initial default Admin account if no users exist locally
+  /// Seeds initial default Admin and Demo Supplier accounts if no users exist locally
   Future<void> seedInitialUsersIfEmpty() async {
-    final count = await _db.users.count().getSingle();
-    if (count == 0) {
-      final now = DateTime.now();
+    final now = DateTime.now();
 
-      // Default Admin
+    // 1. Ensure default Admin user exists
+    final adminUser = await (_db.select(_db.users)..where((u) => u.username.equals('admin'))).getSingleOrNull();
+    if (adminUser == null) {
       final adminSalt = _generateSalt();
       final adminHash = _hashPassword('admin123', adminSalt);
       await _db.into(_db.users).insert(
@@ -286,8 +292,73 @@ class AuthRepository {
               updatedAt: now,
             ),
           );
+    }
 
-      // Default Cashier (legacy continuity)
+    // 2. Ensure demo Supplier profile & user account exists for offline portal access
+    const demoSupplierId = 'demo-supplier-01';
+    final existingSupplier = await (_db.select(_db.suppliers)..where((s) => s.id.equals(demoSupplierId))).getSingleOrNull();
+    if (existingSupplier == null) {
+      await _db.into(_db.suppliers).insert(
+            SuppliersCompanion.insert(
+              id: demoSupplierId,
+              businessId: 'demo-biz-01',
+              name: 'Apex Quality Foods & Beverages',
+              contactPerson: const Value('Rajesh Kumar'),
+              phone: const Value('+91 98765 43210'),
+              email: const Value('supplier@apexfoods.in'),
+              isActive: const Value(true),
+              isVerified: const Value(true),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+    } else if (!existingSupplier.isActive || !existingSupplier.isVerified) {
+      await (_db.update(_db.suppliers)..where((s) => s.id.equals(demoSupplierId))).write(
+        const SuppliersCompanion(
+          isActive: Value(true),
+          isVerified: Value(true),
+        ),
+      );
+    }
+
+    final supplierUser = await (_db.select(_db.users)..where((u) => u.username.equals('supplier'))).getSingleOrNull();
+    if (supplierUser == null) {
+      final supplierSalt = _generateSalt();
+      final supplierHash = _hashPassword('supplier123', supplierSalt);
+      await _db.into(_db.users).insert(
+            UsersCompanion.insert(
+              id: _uuid.v4(),
+              username: 'supplier',
+              fullName: 'Rajesh Kumar (Apex Foods)',
+              role: AppConstants.roleSupplier,
+              supplierId: const Value(demoSupplierId),
+              passwordHash: supplierHash,
+              salt: supplierSalt,
+              isActive: const Value(true),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+    } else if (supplierUser.role != AppConstants.roleSupplier ||
+               supplierUser.supplierId != demoSupplierId ||
+               !supplierUser.isActive ||
+               !_verifyPassword('supplier123', supplierUser.passwordHash, supplierUser.salt)) {
+      final supplierSalt = _generateSalt();
+      final supplierHash = _hashPassword('supplier123', supplierSalt);
+      await (_db.update(_db.users)..where((u) => u.id.equals(supplierUser.id))).write(
+        UsersCompanion(
+          role: const Value(AppConstants.roleSupplier),
+          supplierId: const Value(demoSupplierId),
+          isActive: const Value(true),
+          salt: Value(supplierSalt),
+          passwordHash: Value(supplierHash),
+        ),
+      );
+    }
+
+    // 3. Ensure default Cashier user exists (legacy continuity)
+    final cashierUser = await (_db.select(_db.users)..where((u) => u.username.equals('cashier'))).getSingleOrNull();
+    if (cashierUser == null) {
       final cashierSalt = _generateSalt();
       final cashierHash = _hashPassword('cashier123', cashierSalt);
       await _db.into(_db.users).insert(

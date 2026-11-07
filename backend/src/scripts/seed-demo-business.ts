@@ -7,6 +7,8 @@ export const DEMO_ADMIN_USERNAME = 'admin';
 export const DEMO_ADMIN_PASSWORD = 'admin123';
 export const DEMO_CASHIER_USERNAME = 'cashier';
 export const DEMO_CASHIER_PASSWORD = 'cashier123';
+export const DEMO_SUPPLIER_USERNAME = 'supplier';
+export const DEMO_SUPPLIER_PASSWORD = 'supplier123';
 
 export const STANDARD_CATEGORIES = [
   { name: 'Fast Food', display_order: 0, icon: 'fastfood' },
@@ -43,6 +45,54 @@ export async function ensureDemoCategories(businessId: string) {
 }
 
 /**
+ * Idempotently ensures demo supplier profile and supplier login exist.
+ */
+export async function ensureDemoSupplier(businessId: string) {
+  let supplier = await prisma.suppliers.findFirst({
+    where: { business_id: businessId, supplier_code: 'SUP-DEMO-01', deleted_at: null },
+  });
+
+  if (!supplier) {
+    supplier = await prisma.suppliers.create({
+      data: {
+        id: randomUUID(),
+        business_id: businessId,
+        supplier_code: 'SUP-DEMO-01',
+        supplier_name: 'Apex Quality Foods & Beverages',
+        contact_person: 'Rajesh Kumar',
+        phone_number: '+91 98765 43210',
+        email: 'supplier@apexfoods.in',
+        is_active: true,
+      },
+    });
+    console.log(`  + Seeded demo supplier "${supplier.supplier_name}" (${supplier.id})`);
+  }
+
+  const existingSupplierUser = await prisma.users.findFirst({
+    where: { username: DEMO_SUPPLIER_USERNAME, deleted_at: null },
+  });
+
+  if (!existingSupplierUser) {
+    const supplierSalt = await bcrypt.genSalt(10);
+    const supplierPasswordHash = await bcrypt.hash(DEMO_SUPPLIER_PASSWORD, supplierSalt);
+
+    const supplierUser = await prisma.users.create({
+      data: {
+        business_id: businessId,
+        supplier_id: supplier.id,
+        username: DEMO_SUPPLIER_USERNAME,
+        full_name: 'Rajesh Kumar (Apex Foods)',
+        role_id: 'supplier',
+        password_hash: supplierPasswordHash,
+        salt: supplierSalt,
+        is_active: true,
+      },
+    });
+    console.log(`  + Seeded demo supplier user "${supplierUser.username}" (${supplierUser.id})`);
+  }
+}
+
+/**
  * Idempotently seeds the isolated demo business and its admin/cashier accounts.
  * If the demo business or demo users already exist, it leaves them untouched.
  * Never touches or modifies any other business or production users.
@@ -69,6 +119,7 @@ export async function seedDemoBusiness() {
     if (existingBiz) {
       console.log(`  - Business "${DEMO_BUSINESS_NAME}" ID: ${existingBiz.id}`);
       await ensureDemoCategories(existingBiz.id);
+      await ensureDemoSupplier(existingBiz.id);
     }
     if (existingAdmin) console.log(`  - User "${DEMO_ADMIN_USERNAME}" ID: ${existingAdmin.id} (Biz: ${existingAdmin.business_id})`);
     if (existingCashier) console.log(`  - User "${DEMO_CASHIER_USERNAME}" ID: ${existingCashier.id} (Biz: ${existingCashier.business_id})`);
