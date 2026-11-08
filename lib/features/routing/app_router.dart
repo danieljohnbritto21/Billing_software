@@ -443,7 +443,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                     parentNavigatorKey: _rootNavigatorKey,
                     builder: (context, state) {
                       final poId = state.uri.queryParameters['purchaseOrderId'];
-                      return CreateSupplierInvoiceScreen(purchaseOrderId: poId);
+                      final prodId = state.uri.queryParameters['productId'];
+                      return CreateSupplierInvoiceScreen(
+                        purchaseOrderId: poId,
+                        initialProductId: prodId,
+                      );
                     },
                   ),
                   GoRoute(

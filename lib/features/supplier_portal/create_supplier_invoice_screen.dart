@@ -6,11 +6,17 @@ import 'package:uuid/uuid.dart';
 import '../../core/database/app_database.dart';
 import '../../core/sync/sync_provider.dart';
 import '../auth/auth_provider.dart';
+import '../products/product_repository.dart';
 import '../purchases/purchase_repository.dart';
 
 class CreateSupplierInvoiceScreen extends ConsumerStatefulWidget {
   final String? purchaseOrderId;
-  const CreateSupplierInvoiceScreen({super.key, this.purchaseOrderId});
+  final String? initialProductId;
+  const CreateSupplierInvoiceScreen({
+    super.key,
+    this.purchaseOrderId,
+    this.initialProductId,
+  });
 
   @override
   ConsumerState<CreateSupplierInvoiceScreen> createState() => _CreateSupplierInvoiceScreenState();
@@ -35,8 +41,21 @@ class _CreateSupplierInvoiceScreenState extends ConsumerState<CreateSupplierInvo
 
     if (widget.purchaseOrderId != null) {
       _prefillFromPurchaseOrder(widget.purchaseOrderId!);
+    } else if (widget.initialProductId != null) {
+      _prefillFromProductId(widget.initialProductId!);
     } else {
       _addNewItem();
+    }
+  }
+
+  Future<void> _prefillFromProductId(String pId) async {
+    final product = await ref.read(productRepositoryProvider).getProductById(pId);
+    if (mounted) {
+      if (product != null) {
+        _addNewItem(product);
+      } else {
+        _addNewItem();
+      }
     }
   }
 
@@ -89,6 +108,117 @@ class _CreateSupplierInvoiceScreenState extends ConsumerState<CreateSupplierInvo
       );
       _items.add(draft);
     });
+  }
+
+  Future<void> _showProductSelectorModal({int? targetIndex}) async {
+    final products = await ref.read(productRepositoryProvider).getAllProducts();
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        String query = '';
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filtered = query.trim().isEmpty
+                ? products
+                : products.where((p) =>
+                    p.product.name.toLowerCase().contains(query.toLowerCase()) ||
+                    (p.product.code?.toLowerCase().contains(query.toLowerCase()) ?? false)).toList();
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.7,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (_, scrollController) {
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.inventory_2_outlined, color: Colors.indigo),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Select Product for Bill',
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: TextField(
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: 'Search products by name or code...',
+                          prefixIcon: const Icon(Icons.search),
+                          isDense: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onChanged: (val) {
+                          setModalState(() {
+                            query = val;
+                          });
+                        },
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(child: Text('No products available'))
+                          : ListView.separated(
+                              controller: scrollController,
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final item = filtered[index];
+                                final p = item.product;
+                                final rate = (p.costPricePaise > 0 ? p.costPricePaise : p.sellingPricePaise) / 100.0;
+
+                                return ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: Colors.indigo.shade50,
+                                    child: const Icon(Icons.restaurant_menu, color: Colors.indigo, size: 20),
+                                  ),
+                                  title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  subtitle: Text('Unit: ${p.unit} • Rate: ₹${rate.toStringAsFixed(2)}'),
+                                  trailing: FilledButton.tonal(
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      setState(() {
+                                        if (targetIndex != null && targetIndex < _items.length) {
+                                          _items[targetIndex].applyProduct(p);
+                                        } else {
+                                          _addNewItem(p);
+                                        }
+                                      });
+                                    },
+                                    child: const Text('Select'),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
   }
 
   void _removeItem(int index) {
@@ -297,10 +427,24 @@ class _CreateSupplierInvoiceScreenState extends ConsumerState<CreateSupplierInvo
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text('Billed Items (${_items.length})', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                        TextButton.icon(
-                          onPressed: () => _addNewItem(),
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add Item'),
+                        Row(
+                          children: [
+                            FilledButton.tonalIcon(
+                              onPressed: () => _showProductSelectorModal(),
+                              icon: const Icon(Icons.inventory_2_outlined, size: 16),
+                              label: const Text('Select Product'),
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            TextButton.icon(
+                              onPressed: () => _addNewItem(),
+                              icon: const Icon(Icons.add, size: 16),
+                              label: const Text('Custom Item'),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -326,10 +470,15 @@ class _CreateSupplierInvoiceScreenState extends ConsumerState<CreateSupplierInvo
                                 Expanded(
                                   child: TextFormField(
                                     controller: item.nameController,
-                                    decoration: const InputDecoration(
+                                    decoration: InputDecoration(
                                       labelText: 'Product / Item Name *',
                                       isDense: true,
-                                      border: OutlineInputBorder(),
+                                      border: const OutlineInputBorder(),
+                                      suffixIcon: IconButton(
+                                        icon: const Icon(Icons.search, color: Colors.indigo),
+                                        tooltip: 'Select from catalog',
+                                        onPressed: () => _showProductSelectorModal(targetIndex: idx),
+                                      ),
                                     ),
                                     validator: (val) => val == null || val.trim().isEmpty ? 'Name required' : null,
                                     onChanged: (val) => item.name = val,
@@ -545,6 +694,18 @@ class _InvoiceLineItemDraft {
     quantityController = TextEditingController(text: quantity.toString());
     unitController = TextEditingController(text: unit);
     priceController = TextEditingController(text: unitPriceRupees.toStringAsFixed(2));
+  }
+
+  void applyProduct(ProductEntry product) {
+    productId = product.id;
+    name = product.name;
+    unit = product.unit;
+    unitPriceRupees = (product.costPricePaise > 0 ? product.costPricePaise : product.sellingPricePaise) / 100.0;
+    gstRatePercent = product.gstRatePercent;
+
+    nameController.text = name;
+    unitController.text = unit;
+    priceController.text = unitPriceRupees.toStringAsFixed(2);
   }
 
   void dispose() {

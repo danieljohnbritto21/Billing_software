@@ -37,6 +37,85 @@ export class SyncService {
     });
     const latestServerCursor = cursorRecord ? cursorRecord.last_cursor : 0n;
 
+    // Baseline hydration: if a new device starts at cursor 0 and change log is empty,
+    // directly deliver all active categories, suppliers, and products
+    if (clientCursor === 0n && changeLogs.length === 0) {
+      const [initialCategories, initialSuppliers, initialProducts] = await Promise.all([
+        prisma.categories.findMany({
+          where: { business_id: businessId, deleted_at: null },
+          orderBy: { display_order: 'asc' },
+        }),
+        prisma.suppliers.findMany({
+          where: {
+            business_id: businessId,
+            deleted_at: null,
+            ...(isSupplier && supplierId ? { id: supplierId } : {}),
+          },
+        }),
+        prisma.products.findMany({
+          where: { business_id: businessId, deleted_at: null },
+          include: {
+            categories: { select: { name: true } },
+            suppliers: { select: { supplier_name: true } },
+          },
+          orderBy: { name: 'asc' },
+        }),
+      ]);
+
+      const baselineChanges: any[] = [];
+      let cur = 1n;
+      for (const cat of initialCategories) {
+        if (cat.color_value !== null && cat.color_value !== undefined) {
+          (cat as any).color_value = (cat as any).color_value >>> 0;
+        }
+        baselineChanges.push({
+          cursor: cur,
+          entityName: 'categories',
+          recordId: cat.id,
+          operation: 'INSERT',
+          data: cat,
+          version: cat.server_version || cur,
+        });
+        cur++;
+      }
+      for (const sup of initialSuppliers) {
+        baselineChanges.push({
+          cursor: cur,
+          entityName: 'suppliers',
+          recordId: sup.id,
+          operation: 'INSERT',
+          data: sup,
+          version: sup.server_version || cur,
+        });
+        cur++;
+      }
+      for (const prod of initialProducts) {
+        if ((prod as any).categories) {
+          (prod as any).category_name = (prod as any).categories.name;
+        }
+        if ((prod as any).suppliers) {
+          (prod as any).supplier_name = (prod as any).suppliers.supplier_name;
+        }
+        baselineChanges.push({
+          cursor: cur,
+          entityName: 'products',
+          recordId: prod.id,
+          operation: 'INSERT',
+          data: prod,
+          version: prod.server_version || cur,
+        });
+        cur++;
+      }
+
+      const effectiveNextCursor = latestServerCursor > 0n ? latestServerCursor : cur;
+      return {
+        changes: baselineChanges,
+        nextCursor: effectiveNextCursor.toString(),
+        hasMore: false,
+        latestServerCursor: latestServerCursor.toString(),
+      };
+    }
+
     // 3. Hydrate records
     const changes: any[] = [];
     let nextCursor = clientCursor;
@@ -97,16 +176,21 @@ export class SyncService {
             where: {
               id: entry.record_id,
               business_id: businessId,
-              ...(isSupplier && supplierId ? { supplier_id: supplierId } : {}),
             },
             include: {
               categories: {
                 select: { name: true },
               },
+              suppliers: {
+                select: { supplier_name: true },
+              },
             },
           });
           if (data && (data as any).categories) {
             (data as any).category_name = (data as any).categories.name;
+          }
+          if (data && (data as any).suppliers) {
+            (data as any).supplier_name = (data as any).suppliers.supplier_name;
           }
           break;
         case 'customers':

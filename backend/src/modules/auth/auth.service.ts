@@ -137,15 +137,36 @@ export class AuthService {
   }
 
   async login(data: LoginInput) {
-    const user = await prisma.users.findFirst({
+    // If no businessId provided, prioritize the business that actually holds products/categories
+    let user = await prisma.users.findFirst({
       where: {
         username: data.username,
         ...(data.businessId ? { business_id: data.businessId } : {}),
+        businesses: {
+          products: {
+            some: {},
+          },
+        },
       },
       include: {
         businesses: true,
       },
     });
+
+    if (!user) {
+      user = await prisma.users.findFirst({
+        where: {
+          username: data.username,
+          ...(data.businessId ? { business_id: data.businessId } : {}),
+        },
+        include: {
+          businesses: true,
+        },
+        orderBy: {
+          created_at: 'asc',
+        },
+      });
+    }
 
     if (!user || !user.is_active || user.deleted_at !== null) {
       throw new AppError(401, 'Invalid username or password.');
@@ -242,15 +263,36 @@ export class AuthService {
   }
 
   async supplierLogin(data: SupplierLoginInput) {
-    const user = await prisma.users.findFirst({
+    // If no businessId provided, prioritize the business that actually holds products/categories
+    let user = await prisma.users.findFirst({
       where: {
         username: data.username,
         ...(data.businessId ? { business_id: data.businessId } : {}),
+        businesses: {
+          products: {
+            some: {},
+          },
+        },
       },
       include: {
         businesses: true,
       },
     });
+
+    if (!user) {
+      user = await prisma.users.findFirst({
+        where: {
+          username: data.username,
+          ...(data.businessId ? { business_id: data.businessId } : {}),
+        },
+        include: {
+          businesses: true,
+        },
+        orderBy: {
+          created_at: 'asc',
+        },
+      });
+    }
 
     if (!user || !user.is_active || user.deleted_at !== null) {
       throw new AppError(401, 'Invalid username or password.');

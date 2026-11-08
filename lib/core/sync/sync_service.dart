@@ -522,13 +522,38 @@ class SyncService extends ChangeNotifier {
             }
           }
 
+          // Safe Supplier foreign-key resolution (prevents SQLite PRAGMA foreign_keys = ON failure)
+          final rawSupId = (d['supplier_id'] ?? d['supplierId'])?.toString();
+          String? resolvedSupId;
+          if (rawSupId != null && rawSupId.isNotEmpty) {
+            final existingSup = await (_db.select(_db.suppliers)..where((s) => s.id.equals(rawSupId))).getSingleOrNull();
+            if (existingSup != null) {
+              resolvedSupId = rawSupId;
+            } else {
+              final placeholderSupName = (d['supplier_name'] ?? d['supplierName'] ?? 'Vendor Supply').toString();
+              await _db.into(_db.suppliers).insertOnConflictUpdate(
+                SuppliersCompanion.insert(
+                  id: rawSupId,
+                  businessId: bizId,
+                  name: placeholderSupName,
+                  isActive: const drift.Value(true),
+                  isVerified: const drift.Value(true),
+                  createdAt: DateTime.now(),
+                  updatedAt: DateTime.now(),
+                  syncStatus: const drift.Value('synced'),
+                ),
+              );
+              resolvedSupId = rawSupId;
+            }
+          }
+
           await _db.into(_db.products).insertOnConflictUpdate(
             ProductsCompanion.insert(
               id: recordId,
               name: d['name'] ?? '',
               code: drift.Value(d['code']),
               categoryId: drift.Value(resolvedCatId),
-              supplierId: drift.Value(d['supplier_id'] ?? d['supplierId']),
+              supplierId: drift.Value(resolvedSupId),
               description: drift.Value(d['description']),
               costPricePaise: drift.Value(costPaise),
               sellingPricePaise: sellPaise,
@@ -713,7 +738,7 @@ class SyncService extends ChangeNotifier {
             SuppliersCompanion.insert(
               id: recordId,
               businessId: bizId,
-              name: d['name'] ?? '',
+              name: d['supplier_name'] ?? d['supplierName'] ?? d['name'] ?? 'Supplier',
               contactPerson: drift.Value(d['contact_person'] ?? d['contactPerson']),
               email: drift.Value(d['email']),
               phone: drift.Value(d['phone']),

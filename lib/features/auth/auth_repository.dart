@@ -70,7 +70,7 @@ class AuthRepository {
             if (devUid != null) 'deviceUid': devUid,
             if (devName != null) 'deviceName': devName,
           },
-          timeout: const Duration(seconds: 5),
+          timeout: const Duration(seconds: 35),
         );
 
         if (res is Map<String, dynamic> && res['token'] != null) {
