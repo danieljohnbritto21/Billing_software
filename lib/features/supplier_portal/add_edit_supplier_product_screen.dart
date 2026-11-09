@@ -18,7 +18,8 @@ class AddEditSupplierProductScreen extends ConsumerStatefulWidget {
 class _AddEditSupplierProductScreenState extends ConsumerState<AddEditSupplierProductScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _priceController = TextEditingController();
+  final _costPriceController = TextEditingController();
+  final _sellingPriceController = TextEditingController();
   final _unitController = TextEditingController(text: 'pcs');
   String? _categoryId;
   bool _isAvailable = true;
@@ -37,8 +38,12 @@ class _AddEditSupplierProductScreenState extends ConsumerState<AddEditSupplierPr
     if (p != null && mounted) {
       setState(() {
         _nameController.text = p.name;
-        final price = p.costPricePaise > 0 ? p.costPricePaise : p.sellingPricePaise;
-        _priceController.text = (price / 100.0).toStringAsFixed(2);
+        _sellingPriceController.text = (p.sellingPricePaise / 100.0).toStringAsFixed(2);
+        if (p.costPricePaise > 0) {
+          _costPriceController.text = (p.costPricePaise / 100.0).toStringAsFixed(2);
+        } else {
+          _costPriceController.text = (p.sellingPricePaise / 100.0).toStringAsFixed(2);
+        }
         _unitController.text = p.unit;
         _categoryId = p.categoryId;
         _isAvailable = p.isAvailable;
@@ -49,7 +54,8 @@ class _AddEditSupplierProductScreenState extends ConsumerState<AddEditSupplierPr
   @override
   void dispose() {
     _nameController.dispose();
-    _priceController.dispose();
+    _costPriceController.dispose();
+    _sellingPriceController.dispose();
     _unitController.dispose();
     super.dispose();
   }
@@ -69,8 +75,11 @@ class _AddEditSupplierProductScreenState extends ConsumerState<AddEditSupplierPr
 
     setState(() => _isLoading = true);
 
-    final priceRupees = double.tryParse(_priceController.text.trim()) ?? 0.0;
-    final pricePaise = (priceRupees * 100).round();
+    final sellingRupees = double.tryParse(_sellingPriceController.text.trim()) ?? 0.0;
+    final costRupees = double.tryParse(_costPriceController.text.trim()) ?? sellingRupees;
+
+    final sellingPaise = (sellingRupees * 100).round();
+    final costPaise = (costRupees * 100).round();
 
     try {
       final repo = ref.read(productRepositoryProvider);
@@ -83,8 +92,8 @@ class _AddEditSupplierProductScreenState extends ConsumerState<AddEditSupplierPr
               name: _nameController.text.trim(),
               categoryId: drift.Value(_categoryId),
               supplierId: drift.Value(supplierId),
-              sellingPricePaise: pricePaise,
-              costPricePaise: pricePaise,
+              sellingPricePaise: sellingPaise,
+              costPricePaise: costPaise,
               unit: _unitController.text.trim().isNotEmpty ? _unitController.text.trim() : 'pcs',
               isAvailable: _isAvailable,
               updatedAt: DateTime.now(),
@@ -96,8 +105,8 @@ class _AddEditSupplierProductScreenState extends ConsumerState<AddEditSupplierPr
           name: _nameController.text.trim(),
           categoryId: _categoryId,
           supplierId: supplierId,
-          sellingPricePaise: pricePaise,
-          costPricePaise: pricePaise,
+          sellingPricePaise: sellingPaise,
+          costPricePaise: costPaise,
           unit: _unitController.text.trim().isNotEmpty ? _unitController.text.trim() : 'pcs',
           isAvailable: _isAvailable,
         );
@@ -180,36 +189,54 @@ class _AddEditSupplierProductScreenState extends ConsumerState<AddEditSupplierPr
                     Row(
                       children: [
                         Expanded(
-                          flex: 3,
                           child: TextFormField(
-                            controller: _priceController,
+                            controller: _costPriceController,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             decoration: const InputDecoration(
-                              labelText: 'Supply Price (₹) *',
-                              prefixIcon: Icon(Icons.currency_rupee),
+                              labelText: 'Cost Price (₹)',
+                              hintText: 'e.g. 60.00',
+                              prefixIcon: Icon(Icons.shopping_bag_outlined),
                               border: OutlineInputBorder(),
                             ),
                             validator: (val) {
-                              final n = double.tryParse(val ?? '');
-                              if (n == null || n < 0) return 'Invalid price';
+                              if (val != null && val.trim().isNotEmpty) {
+                                final n = double.tryParse(val.trim());
+                                if (n == null || n < 0) return 'Invalid';
+                              }
                               return null;
                             },
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          flex: 2,
                           child: TextFormField(
-                            controller: _unitController,
+                            controller: _sellingPriceController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             decoration: const InputDecoration(
-                              labelText: 'Unit *',
-                              hintText: 'kg, pcs, box',
+                              labelText: 'Supply Price (₹) *',
+                              hintText: 'e.g. 80.00',
+                              prefixIcon: Icon(Icons.currency_rupee),
                               border: OutlineInputBorder(),
                             ),
-                            validator: (val) => val == null || val.trim().isEmpty ? 'Required' : null,
+                            validator: (val) {
+                              final n = double.tryParse(val ?? '');
+                              if (n == null || n <= 0) return 'Must be > 0';
+                              return null;
+                            },
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _unitController,
+                      decoration: const InputDecoration(
+                        labelText: 'Unit of Measure *',
+                        hintText: 'kg, pcs, box, plate',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.straighten),
+                      ),
+                      validator: (val) => val == null || val.trim().isEmpty ? 'Required' : null,
                     ),
                     const SizedBox(height: 16),
                     SwitchListTile(
@@ -226,10 +253,12 @@ class _AddEditSupplierProductScreenState extends ConsumerState<AddEditSupplierPr
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _isLoading ? null : _save,
-              icon: _isLoading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.check),
-              label: Text(_isLoading ? 'Saving...' : 'Save Product', style: const TextStyle(fontSize: 16)),
+              icon: _isLoading
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.save),
+              label: Text(widget.productId != null ? 'Update Product' : 'Add Product to Catalog'),
               style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
             ),

@@ -129,7 +129,7 @@ class _SupplierCatalogScreenState extends ConsumerState<SupplierCatalogScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Unit: ${p.unit} • Rate: ${_currencyFormat.format(price)}',
+                                'Unit: ${p.unit} • Rate: ${_currencyFormat.format(price)}${p.costPricePaise > 0 && p.costPricePaise != p.sellingPricePaise ? " (Cost: ${_currencyFormat.format(p.costPricePaise / 100.0)})" : ""}',
                                 style: const TextStyle(fontWeight: FontWeight.w500),
                               ),
                               Text(

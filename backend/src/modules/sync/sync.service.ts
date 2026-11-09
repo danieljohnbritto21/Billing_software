@@ -570,6 +570,13 @@ export class SyncService {
                 ? BigInt(p.costPricePaise)
                 : (p.costPriceRupees !== undefined ? BigInt(Math.round(Number(p.costPriceRupees) * 100)) : 0n);
 
+              const sellingRupees = p.sellingPriceRupees !== undefined
+                ? Number(p.sellingPriceRupees)
+                : Number(sellingPaise) / 100.0;
+              const costRupees = p.costPriceRupees !== undefined
+                ? Number(p.costPriceRupees)
+                : Number(costPaise) / 100.0;
+
               const savedProduct = await prisma.products.upsert({
                 where: {
                   business_id_id: {
@@ -585,6 +592,8 @@ export class SyncService {
                   description: p.description,
                   cost_price_paise: costPaise,
                   selling_price_paise: sellingPaise,
+                  cost_price_rupees: costRupees,
+                  selling_price_rupees: sellingRupees,
                   gst_rate_percent: p.gstRatePercent ?? 0,
                   is_tax_inclusive: p.isTaxInclusive ?? true,
                   unit: p.unit ?? 'plate',
@@ -601,6 +610,8 @@ export class SyncService {
                   description: p.description,
                   cost_price_paise: costPaise,
                   selling_price_paise: sellingPaise,
+                  cost_price_rupees: costRupees,
+                  selling_price_rupees: sellingRupees,
                   gst_rate_percent: p.gstRatePercent ?? 0,
                   is_tax_inclusive: p.isTaxInclusive ?? true,
                   unit: p.unit ?? 'plate',

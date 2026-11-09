@@ -601,17 +601,40 @@ class _AddEditProductScreenState extends ConsumerState<AddEditProductScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Selling Price & Unit
+                  // Pricing: Cost Price & Selling Price
                   Row(
                     children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _costPriceController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Cost Price (₹)',
+                            hintText: 'e.g. 65.00',
+                            prefixIcon: Icon(Icons.shopping_bag_outlined),
+                            helperText: 'Purchase / Raw cost',
+                          ),
+                          validator: (val) {
+                            if (val != null && val.trim().isNotEmpty) {
+                              final num = double.tryParse(val.trim());
+                              if (num == null || num < 0) {
+                                return 'Cannot be negative';
+                              }
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: TextFormField(
                           controller: _sellingPriceController,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           decoration: const InputDecoration(
                             labelText: 'Selling Price (₹) *',
-                            hintText: '149.00',
+                            hintText: 'e.g. 80.00',
                             prefixIcon: Icon(Icons.currency_rupee),
+                            helperText: 'Menu / Bill rate',
                           ),
                           validator: (val) {
                             if (val == null || val.trim().isEmpty) {
@@ -625,26 +648,26 @@ class _AddEditProductScreenState extends ConsumerState<AddEditProductScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          value: _selectedUnit,
-                          decoration: const InputDecoration(
-                            labelText: 'Unit *',
-                            prefixIcon: Icon(Icons.straighten),
-                          ),
-                          items: AppConstants.standardUnits.map((u) {
-                            return DropdownMenuItem(
-                              value: u,
-                              child: Text(u),
-                            );
-                          }).toList(),
-                          onChanged: (val) {
-                            if (val != null) setState(() => _selectedUnit = val);
-                          },
-                        ),
-                      ),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Unit of Measure
+                  DropdownButtonFormField<String>(
+                    value: _selectedUnit,
+                    decoration: const InputDecoration(
+                      labelText: 'Unit of Measure *',
+                      prefixIcon: Icon(Icons.straighten),
+                    ),
+                    items: AppConstants.standardUnits.map((u) {
+                      return DropdownMenuItem(
+                        value: u,
+                        child: Text(u),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _selectedUnit = val);
+                    },
                   ),
                   const SizedBox(height: 16),
 

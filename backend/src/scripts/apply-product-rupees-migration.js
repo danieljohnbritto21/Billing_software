@@ -1,6 +1,4 @@
 const { PrismaClient } = require('@prisma/client');
-const fs = require('fs');
-const path = require('path');
 require('dotenv').config();
 
 const prisma = new PrismaClient();
@@ -12,14 +10,47 @@ async function main() {
   const countBefore = await prisma.products.count();
   console.log(`Verified ${countBefore} total products before migration.`);
 
-  // 2. Read migration SQL
-  const migrationPath = path.join(__dirname, '../../prisma/migrations/20261109_product_prices_to_rupees/migration.sql');
-  const sql = fs.readFileSync(migrationPath, 'utf8');
+  console.log('Executing step-by-step DDL/DML on PostgreSQL...');
 
-  // 3. Execute migration inside transaction
-  console.log('Executing migration transaction on PostgreSQL...');
-  await prisma.$executeRawUnsafe(sql);
-  console.log('✔ Migration SQL executed successfully!');
+  // Step 1: Add columns
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "products"
+    ADD COLUMN IF NOT EXISTS "cost_price_rupees" NUMERIC(12,2) DEFAULT 0.00;
+  `);
+  console.log('✔ Added cost_price_rupees column.');
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "products"
+    ADD COLUMN IF NOT EXISTS "selling_price_rupees" NUMERIC(12,2) DEFAULT 0.00;
+  `);
+  console.log('✔ Added selling_price_rupees column.');
+
+  // Step 2: Backfill existing records
+  await prisma.$executeRawUnsafe(`
+    UPDATE "products"
+    SET
+      "cost_price_rupees" = ROUND(COALESCE("cost_price_paise", 0)::numeric / 100.0, 2),
+      "selling_price_rupees" = ROUND(COALESCE("selling_price_paise", 0)::numeric / 100.0, 2);
+  `);
+  console.log('✔ Backfilled cost_price_rupees and selling_price_rupees for all products.');
+
+  // Step 3: Set NOT NULL
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "products"
+    ALTER COLUMN "cost_price_rupees" SET NOT NULL;
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "products"
+    ALTER COLUMN "selling_price_rupees" SET NOT NULL;
+  `);
+  console.log('✔ Enforced NOT NULL on rupee columns.');
+
+  // Step 4: Index
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "idx_products_selling_price_rupees"
+    ON "products" ("business_id", "selling_price_rupees");
+  `);
+  console.log('✔ Created index idx_products_selling_price_rupees.');
 
   // 4. Verify post-migration columns and backfilled values
   const products = await prisma.$queryRaw`

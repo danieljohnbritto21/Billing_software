@@ -208,6 +208,8 @@ model products {
   description         String?
   cost_price_paise    BigInt    @default(0)
   selling_price_paise BigInt
+  cost_price_rupees    Decimal   @default(0.00) @db.Decimal(12, 2)
+  selling_price_rupees Decimal   @default(0.00) @db.Decimal(12, 2)
   gst_rate_percent    Decimal   @default(0.00) @db.Decimal(5, 2)
   is_tax_inclusive    Boolean   @default(true)
   unit                String    @default("plate") @db.VarChar(30)

@@ -233,8 +233,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     itemBuilder: (context, index) {
                       final item = items[index];
                       final p = item.product;
-                      final priceRupees =
+                      final sellingPriceFormatted =
                           CurrencyFormatter.formatPaise(p.sellingPricePaise);
+                      final costPriceFormatted =
+                          CurrencyFormatter.formatPaise(p.costPricePaise);
 
                       return Card(
                         elevation: 0,
@@ -319,13 +321,37 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                                       ),
                                     ),
                                     const SizedBox(height: 4),
-                                    Text(
-                                      '$priceRupees / ${p.unit}',
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppTheme.primaryGreen,
-                                      ),
+                                    Wrap(
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      children: [
+                                        Text(
+                                          'Sell: $sellingPriceFormatted / ${p.unit}',
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppTheme.primaryGreen,
+                                          ),
+                                        ),
+                                        if (p.costPricePaise > 0)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blueGrey.shade50,
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: Colors.blueGrey.shade200),
+                                            ),
+                                            child: Text(
+                                              'Cost: $costPriceFormatted',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.blueGrey.shade700,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ],
                                 ),
