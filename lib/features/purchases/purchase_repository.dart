@@ -290,7 +290,7 @@ class PurchaseRepository {
         taxPaise: Value(totalTaxPaise),
         grandTotalPaise: grandTotalPaise,
         balanceDuePaise: Value(grandTotalPaise),
-        verificationStatus: const Value('PENDING_VERIFICATION'),
+        verificationStatus: const Value('SUBMITTED'),
         paymentStatus: const Value('PENDING'),
         invoiceDate: invoiceDate ?? now,
         dueDate: Value(dueDate),
@@ -576,11 +576,12 @@ class PurchaseRepository {
             item['invoice_number']?.toString() ??
             item['invoiceNumber']?.toString() ??
             'INV';
-        final verStatus = item['verification_status']?.toString() ??
+        final rawVer = item['verification_status']?.toString() ??
             item['verificationStatus']?.toString() ??
             item['invoice_status']?.toString() ??
             item['invoiceStatus']?.toString() ??
-            'PENDING_VERIFICATION';
+            'SUBMITTED';
+        final verStatus = rawVer == 'PENDING_VERIFICATION' ? 'SUBMITTED' : rawVer;
         final payStatus = item['payment_status']?.toString() ?? item['paymentStatus']?.toString() ?? 'PENDING';
         final subtotal = _parseInt(item['subtotal_paise'] ?? item['subtotalPaise']);
         final tax = _parseInt(item['tax_paise'] ?? item['taxPaise'] ?? item['tax_amount_paise'] ?? item['taxAmountPaise']);

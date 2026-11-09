@@ -29,8 +29,10 @@ class _SupplierInvoicesScreenState extends ConsumerState<SupplierInvoicesScreen>
 
   Color _getVerificationColor(String status) {
     switch (status.toUpperCase()) {
+      case 'SUBMITTED':
+        return Colors.blue.shade700;
       case 'PENDING_VERIFICATION':
-        return Colors.amber.shade800;
+        return Colors.blue.shade700;
       case 'APPROVED':
         return Colors.green.shade700;
       case 'REJECTED':
@@ -47,6 +49,7 @@ class _SupplierInvoicesScreenState extends ConsumerState<SupplierInvoicesScreen>
       case 'PARTIALLY_PAID':
         return Colors.blue.shade700;
       case 'PENDING':
+      case 'UNPAID':
         return Colors.orange.shade800;
       default:
         return Colors.grey.shade700;
@@ -91,7 +94,7 @@ class _SupplierInvoicesScreenState extends ConsumerState<SupplierInvoicesScreen>
               ),
               items: const [
                 DropdownMenuItem(value: null, child: Text('All Bills')),
-                DropdownMenuItem(value: 'PENDING_VERIFICATION', child: Text('Pending Approval')),
+                DropdownMenuItem(value: 'SUBMITTED', child: Text('Submitted Bills')),
                 DropdownMenuItem(value: 'APPROVED', child: Text('Approved Bills')),
                 DropdownMenuItem(value: 'REJECTED', child: Text('Rejected Bills')),
               ],
@@ -145,7 +148,7 @@ class _SupplierInvoicesScreenState extends ConsumerState<SupplierInvoicesScreen>
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                           side: BorderSide(
-                            color: inv.verificationStatus == 'PENDING_VERIFICATION' ? Colors.amber.shade300 : Colors.grey.shade200,
+                            color: verColor.withValues(alpha: 0.3),
                           ),
                         ),
                         child: InkWell(
@@ -176,7 +179,7 @@ class _SupplierInvoicesScreenState extends ConsumerState<SupplierInvoicesScreen>
                                             border: Border.all(color: verColor.withValues(alpha: 0.4)),
                                           ),
                                           child: Text(
-                                            inv.verificationStatus == 'PENDING_VERIFICATION' ? 'PENDING' : inv.verificationStatus,
+                                            inv.verificationStatus == 'PENDING_VERIFICATION' ? 'SUBMITTED' : inv.verificationStatus,
                                             style: TextStyle(color: verColor, fontWeight: FontWeight.bold, fontSize: 10),
                                           ),
                                         ),
@@ -189,7 +192,7 @@ class _SupplierInvoicesScreenState extends ConsumerState<SupplierInvoicesScreen>
                                             border: Border.all(color: payColor.withValues(alpha: 0.4)),
                                           ),
                                           child: Text(
-                                            inv.paymentStatus,
+                                            inv.paymentStatus == 'PENDING' ? 'UNPAID' : inv.paymentStatus,
                                             style: TextStyle(color: payColor, fontWeight: FontWeight.bold, fontSize: 10),
                                           ),
                                         ),

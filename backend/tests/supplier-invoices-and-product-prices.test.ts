@@ -322,8 +322,54 @@ test('=== FOODBILL PRO SUPPLIER INVOICE CONTRACT & PRODUCT PRICE TESTS ===', asy
       const res = await apiRequest(`/admin/purchase-invoices/${testInvoiceUuid}`, {}, adminToken, deviceId);
       assert.equal(res.status, 200);
       assert.equal(res.data.data.supplier_invoice_number, testInvoiceNum);
+      assert.equal(res.data.data.invoice_status, 'SUBMITTED', 'Must enter SUBMITTED status directly');
       assert.ok(Array.isArray(res.data.data.purchase_invoice_items));
       assert.equal(res.data.data.purchase_invoice_items.length, 1);
+    });
+
+    await t3.test('3.5 Direct payment disbursement on SUBMITTED invoice without approval gate', async () => {
+      let pm = await prisma.payment_methods.findFirst({
+        where: { business_id: businessId, is_active: true },
+      });
+      if (!pm) {
+        pm = await prisma.payment_methods.create({
+          data: {
+            business_id: businessId,
+            name: 'Cash',
+            type: 'CASH',
+            is_active: true,
+          },
+        });
+      }
+
+      // Admin pays 50000 paise against the SUBMITTED invoice directly
+      const payRes = await apiRequest(
+        `/admin/purchase-invoices/${testInvoiceUuid}/payments`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            supplierId: supplierId,
+            amountPaise: 50000,
+            paymentMethodId: pm.id,
+            paymentReference: 'CHQ-12345',
+            notes: 'Advance disbursement on submitted bill',
+          }),
+        },
+        adminToken,
+        deviceId
+      );
+
+      assert.equal(payRes.status, 201, 'Payment should be disbursed successfully without requiring prior approval');
+
+      // Verify invoice balance updated
+      const updatedInv = await prisma.purchase_invoices.findFirst({
+        where: { id: testInvoiceUuid },
+      });
+      assert.ok(updatedInv);
+      assert.equal(Number(updatedInv.amount_paid_paise), 50000);
+      assert.equal(Number(updatedInv.balance_due_paise), 34000);
+      assert.equal(updatedInv.payment_status, 'PARTIALLY_PAID');
+      assert.equal(updatedInv.invoice_status, 'SUBMITTED', 'Status should remain SUBMITTED');
     });
   });
 

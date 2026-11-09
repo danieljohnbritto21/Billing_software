@@ -101,22 +101,22 @@ class _SupplierPaymentScreenState extends ConsumerState<SupplierPaymentScreen> {
             return const Center(child: Text('Purchase invoice not found.'));
           }
 
-          if (inv.verificationStatus != 'APPROVED') {
+          if (inv.verificationStatus == 'REJECTED' || inv.verificationStatus == 'CANCELLED') {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.block, size: 64, color: Colors.amber),
+                    const Icon(Icons.block, size: 64, color: Colors.red),
                     const SizedBox(height: 16),
                     Text(
-                      'Invoice Not Approved',
+                      'Invoice ${inv.verificationStatus}',
                       style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Supplier payments can only be disbursed against approved invoices.',
+                    Text(
+                      'Supplier payments cannot be disbursed against ${inv.verificationStatus.toLowerCase()} invoices.',
                       textAlign: TextAlign.center,
                     ),
                   ],

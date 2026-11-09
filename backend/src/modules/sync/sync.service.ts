@@ -123,6 +123,9 @@ export class SyncService {
       for (const pi of initialPurchaseInvoices) {
         (pi as any).invoice_number = pi.supplier_invoice_number;
         (pi as any).invoiceNumber = pi.supplier_invoice_number;
+        if ((pi as any).invoice_status === 'PENDING_VERIFICATION') {
+          (pi as any).invoice_status = 'SUBMITTED';
+        }
         baselineChanges.push({
           cursor: cur,
           entityName: 'purchase_invoices',
@@ -295,6 +298,9 @@ export class SyncService {
           if (data) {
             (data as any).invoice_number = (data as any).supplier_invoice_number;
             (data as any).invoiceNumber = (data as any).supplier_invoice_number;
+            if ((data as any).invoice_status === 'PENDING_VERIFICATION') {
+              (data as any).invoice_status = 'SUBMITTED';
+            }
           }
           break;
         case 'supplier_payments':

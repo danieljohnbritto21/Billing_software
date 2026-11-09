@@ -24,8 +24,10 @@ class _PurchaseInvoiceDetailScreenState extends ConsumerState<PurchaseInvoiceDet
 
   Color _getVerificationColor(String status) {
     switch (status.toUpperCase()) {
+      case 'SUBMITTED':
+        return Colors.blue.shade700;
       case 'PENDING_VERIFICATION':
-        return Colors.amber.shade800;
+        return Colors.blue.shade700;
       case 'APPROVED':
         return Colors.green.shade700;
       case 'REJECTED':
@@ -42,6 +44,7 @@ class _PurchaseInvoiceDetailScreenState extends ConsumerState<PurchaseInvoiceDet
       case 'PARTIALLY_PAID':
         return Colors.blue.shade700;
       case 'PENDING':
+      case 'UNPAID':
         return Colors.orange.shade800;
       default:
         return Colors.grey.shade700;
@@ -398,7 +401,7 @@ class _PurchaseInvoiceDetailScreenState extends ConsumerState<PurchaseInvoiceDet
                                   border: Border.all(color: verColor.withValues(alpha: 0.4)),
                                 ),
                                 child: Text(
-                                  inv.verificationStatus,
+                                  inv.verificationStatus == 'PENDING_VERIFICATION' ? 'SUBMITTED' : inv.verificationStatus,
                                   style: TextStyle(color: verColor, fontWeight: FontWeight.bold, fontSize: 12),
                                 ),
                               ),
@@ -411,7 +414,7 @@ class _PurchaseInvoiceDetailScreenState extends ConsumerState<PurchaseInvoiceDet
                                   border: Border.all(color: payColor.withValues(alpha: 0.4)),
                                 ),
                                 child: Text(
-                                  inv.paymentStatus,
+                                  inv.paymentStatus == 'PENDING' ? 'UNPAID' : inv.paymentStatus,
                                   style: TextStyle(color: payColor, fontWeight: FontWeight.bold, fontSize: 12),
                                 ),
                               ),
@@ -721,46 +724,46 @@ class _PurchaseInvoiceDetailScreenState extends ConsumerState<PurchaseInvoiceDet
               const SizedBox(height: 24),
 
               // Action Buttons for Admin
-              if (inv.verificationStatus == 'PENDING_VERIFICATION') ...[
+              if (inv.balanceDuePaise > 0 && inv.verificationStatus != 'REJECTED' && inv.verificationStatus != 'CANCELLED') ...[
                 Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
+                    if (inv.verificationStatus == 'SUBMITTED' || inv.verificationStatus == 'PENDING_VERIFICATION') ...[
+                      OutlinedButton.icon(
                         onPressed: _isActionLoading ? null : _rejectInvoice,
                         icon: const Icon(Icons.close, color: Colors.red),
-                        label: const Text('Reject Invoice', style: TextStyle(color: Colors.red)),
+                        label: const Text('Reject', style: TextStyle(color: Colors.red)),
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: Colors.red),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _isActionLoading ? null : _approveInvoice,
+                        icon: const Icon(Icons.check, color: Colors.green),
+                        label: const Text('Verify', style: TextStyle(color: Colors.green)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.green),
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     Expanded(
                       child: FilledButton.icon(
-                        onPressed: _isActionLoading ? null : _approveInvoice,
-                        icon: const Icon(Icons.check),
-                        label: const Text('Approve Invoice'),
+                        onPressed: () => context.push('/purchases/invoices/${inv.id}/pay'),
+                        icon: const Icon(Icons.payment),
+                        label: const Text('Record Payment Voucher', style: TextStyle(fontSize: 15)),
                         style: FilledButton.styleFrom(
-                          backgroundColor: Colors.green.shade700,
+                          backgroundColor: theme.colorScheme.primary,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                       ),
                     ),
                   ],
-                ),
-              ] else if (inv.verificationStatus == 'APPROVED' && inv.balanceDuePaise > 0) ...[
-                FilledButton.icon(
-                  onPressed: () => context.push('/purchases/invoices/${inv.id}/pay'),
-                  icon: const Icon(Icons.payment),
-                  label: const Text('Record Supplier Payment Voucher', style: TextStyle(fontSize: 16)),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: theme.colorScheme.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
                 ),
               ],
 

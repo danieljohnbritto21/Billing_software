@@ -337,7 +337,7 @@ supplierPurchasesRouter.post(
       const statusCode = result.isDuplicate ? 200 : 201;
       const msg = result.isDuplicate
         ? 'Invoice already submitted. Existing invoice returned.'
-        : 'Invoice submitted successfully. Awaiting verification.';
+        : 'Invoice submitted successfully.';
       return apiSuccess(res, result, msg, statusCode);
     } catch (err) {
       next(err);
@@ -352,7 +352,7 @@ supplierPurchasesRouter.post('/invoices/:id/submit', async (req: Request, res: R
       req.params.id,
       req.user!.supplierId!
     );
-    return apiSuccess(res, result, 'Invoice submitted for verification');
+    return apiSuccess(res, result, 'Invoice submitted successfully');
   } catch (err) {
     next(err);
   }

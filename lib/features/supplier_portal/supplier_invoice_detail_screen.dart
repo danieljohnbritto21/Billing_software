@@ -14,8 +14,10 @@ class SupplierInvoiceDetailScreen extends ConsumerWidget {
 
   Color _getVerificationColor(String status) {
     switch (status.toUpperCase()) {
+      case 'SUBMITTED':
+        return Colors.blue.shade700;
       case 'PENDING_VERIFICATION':
-        return Colors.amber.shade800;
+        return Colors.blue.shade700;
       case 'APPROVED':
         return Colors.green.shade700;
       case 'REJECTED':
@@ -32,6 +34,7 @@ class SupplierInvoiceDetailScreen extends ConsumerWidget {
       case 'PARTIALLY_PAID':
         return Colors.blue.shade700;
       case 'PENDING':
+      case 'UNPAID':
         return Colors.orange.shade800;
       default:
         return Colors.grey.shade700;
@@ -296,7 +299,7 @@ class SupplierInvoiceDetailScreen extends ConsumerWidget {
                                   border: Border.all(color: verColor.withValues(alpha: 0.4)),
                                 ),
                                 child: Text(
-                                  inv.verificationStatus,
+                                  inv.verificationStatus == 'PENDING_VERIFICATION' ? 'SUBMITTED' : inv.verificationStatus,
                                   style: TextStyle(color: verColor, fontWeight: FontWeight.bold, fontSize: 12),
                                 ),
                               ),
@@ -309,7 +312,7 @@ class SupplierInvoiceDetailScreen extends ConsumerWidget {
                                   border: Border.all(color: payColor.withValues(alpha: 0.4)),
                                 ),
                                 child: Text(
-                                  inv.paymentStatus,
+                                  inv.paymentStatus == 'PENDING' ? 'UNPAID' : inv.paymentStatus,
                                   style: TextStyle(color: payColor, fontWeight: FontWeight.bold, fontSize: 12),
                                 ),
                               ),

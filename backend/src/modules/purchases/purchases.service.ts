@@ -382,8 +382,8 @@ export class PurchasesService {
       const grandTotalPaise =
         subtotalPaise + totalTaxPaise > discountBig ? subtotalPaise + totalTaxPaise - discountBig : 0n;
 
-      // Supplier submissions enter 'PENDING_VERIFICATION'; Admin creation enters 'RECEIVED'
-      const invoiceStatus = enforcedSupplierId ? 'PENDING_VERIFICATION' : 'RECEIVED';
+      // Invoices automatically enter 'SUBMITTED' status without requiring an admin approval gate
+      const invoiceStatus = 'SUBMITTED';
 
       const invoice = await tx.purchase_invoices.create({
         data: {
@@ -419,13 +419,13 @@ export class PurchasesService {
 
   async submitPurchaseInvoice(businessId: string, id: string, enforcedSupplierId: string) {
     const invoice = await this.getPurchaseInvoiceById(businessId, id, enforcedSupplierId);
-    if (invoice.invoice_status === 'APPROVED' || invoice.invoice_status === 'PAID') {
+    if (invoice.invoice_status === 'PAID') {
       throw new AppError(400, `Cannot resubmit invoice in '${invoice.invoice_status}' status.`);
     }
 
     return prisma.purchase_invoices.update({
       where: { id },
-      data: { invoice_status: 'PENDING_VERIFICATION' },
+      data: { invoice_status: 'SUBMITTED' },
     });
   }
 
@@ -491,11 +491,11 @@ export class PurchasesService {
           throw new AppError(400, 'Purchase invoice not found or does not belong to this supplier.');
         }
 
-        // An unapproved supplier invoice cannot be paid!
-        if (purchaseInvoice.invoice_status !== 'APPROVED') {
+        // Payments cannot be disbursed against cancelled or rejected invoices
+        if (purchaseInvoice.invoice_status === 'REJECTED' || purchaseInvoice.invoice_status === 'CANCELLED') {
           throw new AppError(
             400,
-            `Cannot pay unapproved invoice. Current invoice status is '${purchaseInvoice.invoice_status}'. Invoice must be APPROVED first.`
+            `Cannot pay invoice in '${purchaseInvoice.invoice_status}' status.`
           );
         }
 
@@ -601,7 +601,7 @@ export class PurchasesService {
     let totalOutstandingPaise = 0n;
 
     for (const inv of invoices) {
-      if (inv.invoice_status === 'APPROVED' || inv.payment_status === 'PAID') {
+      if (inv.invoice_status !== 'REJECTED' && inv.invoice_status !== 'CANCELLED') {
         totalBilledPaise += BigInt(inv.grand_total_paise);
         totalPaidPaise += BigInt(inv.amount_paid_paise);
         totalOutstandingPaise += BigInt(inv.balance_due_paise);

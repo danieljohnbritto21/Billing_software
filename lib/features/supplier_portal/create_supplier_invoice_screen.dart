@@ -28,6 +28,7 @@ class _CreateSupplierInvoiceScreenState extends ConsumerState<CreateSupplierInvo
   final _notesController = TextEditingController();
   DateTime _invoiceDate = DateTime.now();
   DateTime? _dueDate;
+  String? _purchaseOrderNumber;
   final List<_InvoiceLineItemDraft> _items = [];
   bool _isLoading = false;
 
@@ -60,6 +61,10 @@ class _CreateSupplierInvoiceScreenState extends ConsumerState<CreateSupplierInvo
   }
 
   Future<void> _prefillFromPurchaseOrder(String poId) async {
+    final po = await ref.read(purchaseRepositoryProvider).getPurchaseOrderById(poId);
+    if (po != null) {
+      _purchaseOrderNumber = po.poNumber;
+    }
     final poItems = await ref.read(purchaseRepositoryProvider).getPurchaseOrderItems(poId);
 
     if (mounted && poItems.isNotEmpty) {
@@ -303,13 +308,49 @@ class _CreateSupplierInvoiceScreenState extends ConsumerState<CreateSupplierInvo
           );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Invoice submitted! Awaiting Admin verification and approval.'),
-            backgroundColor: Colors.green,
+        final invNum = _invoiceNumberController.text.trim();
+        final poDisplay = _purchaseOrderNumber ?? (widget.purchaseOrderId != null ? 'PO Attached' : 'N/A');
+        final dateDisplay = DateFormat('dd MMM yyyy').format(_invoiceDate);
+
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AlertDialog(
+            icon: const Icon(Icons.check_circle, color: Colors.green, size: 48),
+            title: const Text(
+              'Invoice Submitted Successfully',
+              style: TextStyle(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildConfirmRow('Supplier Invoice Number:', invNum),
+                const SizedBox(height: 8),
+                _buildConfirmRow('Purchase Order:', poDisplay),
+                const SizedBox(height: 8),
+                _buildConfirmRow('Submission Date:', dateDisplay),
+                const SizedBox(height: 8),
+                _buildConfirmRow('Status:', 'SUBMITTED', valueColor: Colors.blue.shade700),
+                const SizedBox(height: 8),
+                _buildConfirmRow('Payment Status:', 'UNPAID', valueColor: Colors.orange.shade800),
+              ],
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                },
+                child: const Text('OK'),
+              ),
+            ],
           ),
         );
-        context.pop();
+
+        if (mounted) {
+          context.pop();
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -320,6 +361,27 @@ class _CreateSupplierInvoiceScreenState extends ConsumerState<CreateSupplierInvo
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Widget _buildConfirmRow(String label, String value, {Color? valueColor}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13, color: Colors.grey)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              color: valueColor,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
