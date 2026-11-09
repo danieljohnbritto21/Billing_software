@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../core/database/app_database.dart';
@@ -292,6 +293,82 @@ class SupplierInvoiceDetailScreen extends ConsumerWidget {
                               Text(
                                 currencyFormat.format(inv.balanceDuePaise / 100),
                                 style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.green.shade800),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Database Reference Card
+                  Card(
+                    elevation: 0,
+                    color: Colors.grey.shade50,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.inventory_2_outlined, size: 16, color: Colors.grey.shade700),
+                              const SizedBox(width: 8),
+                              Text(
+                                'System Record Reference',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: Colors.grey.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Divider(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Database Table:', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                              const Text('purchase_invoices', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Sync Status:', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                              Text(inv.syncStatus ?? 'synced', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Invoice UUID:', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                                    SelectableText(
+                                      inv.id,
+                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.copy, size: 16),
+                                tooltip: 'Copy Database UUID',
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: inv.id));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Copied UUID: ${inv.id}')),
+                                  );
+                                },
                               ),
                             ],
                           ),

@@ -795,29 +795,76 @@ class SyncService extends ChangeNotifier {
             ),
           );
         } else {
+          final invoiceNum = d['supplier_invoice_number']?.toString() ??
+              d['supplierInvoiceNumber']?.toString() ??
+              d['invoice_number']?.toString() ??
+              d['invoiceNumber']?.toString() ??
+              'INV';
+          final subtotal = int.tryParse(d['subtotal_paise']?.toString() ?? '0') ?? 0;
+          final tax = int.tryParse(d['tax_paise']?.toString() ?? d['tax_amount_paise']?.toString() ?? '0') ?? 0;
+          final grandTotal = int.tryParse(d['grand_total_paise']?.toString() ?? '0') ?? 0;
+          final paid = int.tryParse(d['amount_paid_paise']?.toString() ?? '0') ?? 0;
+          final due = int.tryParse(d['balance_due_paise']?.toString() ?? '${grandTotal - paid}') ?? (grandTotal - paid);
+          final invDate = d['invoice_date'] != null ? DateTime.parse(d['invoice_date']) : DateTime.now();
+
           await _db.into(_db.purchaseInvoices).insertOnConflictUpdate(
             PurchaseInvoicesCompanion.insert(
               id: recordId,
               businessId: bizId,
-              supplierId: d['supplier_id'] ?? d['supplierId'] ?? '',
-              purchaseOrderId: drift.Value(d['purchase_order_id'] ?? d['purchaseOrderId']),
-              invoiceNumber: d['invoice_number'] ?? d['invoiceNumber'] ?? 'INV',
-              verificationStatus: drift.Value(d['verification_status'] ?? d['verificationStatus'] ?? 'PENDING_VERIFICATION'),
-              paymentStatus: drift.Value(d['payment_status'] ?? d['paymentStatus'] ?? 'PENDING'),
-              subtotalPaise: int.tryParse(d['subtotal_paise']?.toString() ?? '0') ?? 0,
-              taxPaise: drift.Value(int.tryParse(d['tax_paise']?.toString() ?? '0') ?? 0),
-              grandTotalPaise: int.tryParse(d['grand_total_paise']?.toString() ?? '0') ?? 0,
-              amountPaidPaise: drift.Value(int.tryParse(d['amount_paid_paise']?.toString() ?? '0') ?? 0),
-              balanceDuePaise: drift.Value(int.tryParse(d['balance_due_paise']?.toString() ?? '0') ?? 0),
-              notes: drift.Value(d['notes']),
-              rejectionReason: drift.Value(d['rejection_reason'] ?? d['rejectionReason']),
-              invoiceDate: d['invoice_date'] != null ? DateTime.parse(d['invoice_date']) : DateTime.now(),
+              supplierId: d['supplier_id']?.toString() ?? d['supplierId']?.toString() ?? '',
+              purchaseOrderId: drift.Value(d['purchase_order_id']?.toString() ?? d['purchaseOrderId']?.toString()),
+              invoiceNumber: invoiceNum,
+              verificationStatus: drift.Value(d['verification_status']?.toString() ?? d['verificationStatus']?.toString() ?? d['invoice_status']?.toString() ?? 'PENDING_VERIFICATION'),
+              paymentStatus: drift.Value(d['payment_status']?.toString() ?? d['paymentStatus']?.toString() ?? 'PENDING'),
+              subtotalPaise: subtotal,
+              taxPaise: drift.Value(tax),
+              grandTotalPaise: grandTotal,
+              amountPaidPaise: drift.Value(paid),
+              balanceDuePaise: drift.Value(due),
+              notes: drift.Value(d['notes']?.toString()),
+              rejectionReason: drift.Value(d['rejection_reason']?.toString() ?? d['rejectionReason']?.toString()),
+              invoiceDate: invDate,
               dueDate: drift.Value(d['due_date'] != null ? DateTime.tryParse(d['due_date']) : null),
-              createdAt: d['created_at'] != null ? DateTime.parse(d['created_at']) : DateTime.now(),
+              createdAt: d['created_at'] != null ? DateTime.parse(d['created_at']) : invDate,
               updatedAt: d['updated_at'] != null ? DateTime.parse(d['updated_at']) : DateTime.now(),
               syncStatus: const drift.Value('synced'),
             ),
           );
+
+          final rawItems = d['purchase_invoice_items'] ?? d['purchaseInvoiceItems'];
+          if (rawItems is List) {
+            for (final rawIt in rawItems) {
+              final it = rawIt as Map<String, dynamic>;
+              final itId = it['id']?.toString() ?? _uuid.v4();
+              final pName = it['product_name_snapshot']?.toString() ?? it['productName']?.toString() ?? 'Item';
+              final pCode = it['product_code_snapshot']?.toString() ?? it['productCode']?.toString();
+              final pId = it['product_id']?.toString() ?? it['productId']?.toString();
+              final qty = (it['quantity'] as num?)?.toDouble() ?? 1.0;
+              final uPrice = int.tryParse(it['unit_price_paise']?.toString() ?? it['unitPricePaise']?.toString() ?? '0') ?? 0;
+              final gst = (it['gst_percentage_snapshot'] ?? it['gstPercentage'] ?? it['gstRatePercent'] as num?)?.toDouble() ?? 0.0;
+              final taxable = (qty * uPrice).round();
+              final lineTax = int.tryParse(it['tax_amount_paise']?.toString() ?? it['taxAmountPaise']?.toString() ?? '${(taxable * gst / 100.0).round()}') ?? (taxable * gst / 100.0).round();
+              final lineTotal = int.tryParse(it['total_amount_paise']?.toString() ?? it['totalAmountPaise']?.toString() ?? '${taxable + lineTax}') ?? (taxable + lineTax);
+
+              await _db.into(_db.purchaseInvoiceItems).insertOnConflictUpdate(
+                PurchaseInvoiceItemEntry(
+                  id: itId,
+                  purchaseInvoiceId: recordId,
+                  productId: pId,
+                  productName: pName,
+                  productCode: pCode,
+                  quantity: qty,
+                  unit: it['unit']?.toString() ?? 'unit',
+                  unitPricePaise: uPrice,
+                  gstRatePercent: gst,
+                  taxableAmountPaise: taxable,
+                  taxAmountPaise: lineTax,
+                  totalAmountPaise: lineTotal,
+                  createdAt: invDate,
+                ),
+              );
+            }
+          }
         }
         break;
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants/app_constants.dart';
@@ -462,6 +463,91 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen> {
                           ),
                         ),
                       ],
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Database Traceability Card (Customer Sales Domain)
+              Card(
+                elevation: 0,
+                color: Colors.blueGrey.shade50,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.blueGrey.shade200),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.point_of_sale, size: 18, color: Colors.blueGrey.shade800),
+                          const SizedBox(width: 8),
+                          Text(
+                            'PostgreSQL Database Traceability (Sales Domain)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.blueGrey.shade900,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Database Table:', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700)),
+                          const Text('invoices', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Invoice Number:', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700)),
+                          Text(inv.invoiceNumber, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Sync Status:', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700)),
+                          Text(inv.syncStatus ?? 'synced', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Invoice UUID (PostgreSQL ID):', style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700)),
+                                SelectableText(
+                                  inv.id,
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.copy, size: 18),
+                            tooltip: 'Copy Database UUID',
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: inv.id));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Copied UUID: ${inv.id}')),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),

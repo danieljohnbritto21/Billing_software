@@ -6,6 +6,24 @@ import { env } from '../../config/env';
 import { AppError } from '../../middleware/error.middleware';
 import { CreateProductInput, UpdateProductInput, UploadProductImageInput } from './products.schema';
 
+function formatProductOutput(p: any) {
+  if (!p) return p;
+  const sellingRupees = p.selling_price_rupees != null
+    ? Number(p.selling_price_rupees)
+    : Number(p.selling_price_paise ?? 0) / 100;
+  const costRupees = p.cost_price_rupees != null
+    ? Number(p.cost_price_rupees)
+    : Number(p.cost_price_paise ?? 0) / 100;
+
+  return {
+    ...p,
+    costPriceRupees: costRupees,
+    sellingPriceRupees: sellingRupees,
+    cost_price_rupees: costRupees,
+    selling_price_rupees: sellingRupees,
+  };
+}
+
 export class ProductsService {
   async listProducts(
     businessId: string,
@@ -62,7 +80,7 @@ export class ProductsService {
     ]);
 
     return {
-      items,
+      items: items.map(formatProductOutput),
       total,
       page: page || 1,
       limit: limit || total,
@@ -95,7 +113,7 @@ export class ProductsService {
     if (!product) {
       throw new AppError(404, 'Product not found or access denied');
     }
-    return product;
+    return formatProductOutput(product);
   }
 
   async createProduct(businessId: string, data: CreateProductInput, enforcedSupplierId?: string) {
@@ -137,7 +155,7 @@ export class ProductsService {
     }
 
     const id = data.id || randomUUID();
-    return prisma.products.create({
+    const created = await prisma.products.create({
       data: {
         id,
         business_id: businessId,
@@ -147,7 +165,7 @@ export class ProductsService {
         code: data.code?.trim(),
         description: data.description?.trim(),
         cost_price_paise: BigInt(data.costPricePaise ?? 0),
-        selling_price_paise: BigInt(data.sellingPricePaise),
+        selling_price_paise: BigInt(data.sellingPricePaise ?? 0),
         gst_rate_percent: data.gstRatePercent ?? 0,
         is_tax_inclusive: data.isTaxInclusive ?? true,
         unit: data.unit ?? 'plate',
@@ -161,6 +179,7 @@ export class ProductsService {
         },
       },
     });
+    return formatProductOutput(created);
   }
 
   async updateProduct(
@@ -196,7 +215,7 @@ export class ProductsService {
       supplierIdToSet = supplier.id;
     }
 
-    return prisma.products.update({
+    const updated = await prisma.products.update({
       where: { id },
       data: {
         ...(data.categoryId !== undefined ? { category_id: data.categoryId } : {}),
@@ -219,6 +238,7 @@ export class ProductsService {
         },
       },
     });
+    return formatProductOutput(updated);
   }
 
   async updateProductStatus(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -426,6 +427,106 @@ class _PurchaseInvoiceDetailScreenState extends ConsumerState<PurchaseInvoiceDet
                               Text(
                                 _currencyFormat.format(inv.balanceDuePaise / 100),
                                 style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.red.shade800),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Administrator Database Traceability Card
+                  Card(
+                    elevation: 0,
+                    color: Colors.blueGrey.shade50,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: Colors.blueGrey.shade200),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.storage, size: 18, color: Colors.blueGrey.shade800),
+                              const SizedBox(width: 8),
+                              Text(
+                                'PostgreSQL Database Traceability (Admin)',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: Colors.blueGrey.shade900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Divider(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Table:', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700)),
+                              const Text('purchase_invoices', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Invoice Number:', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700)),
+                              Text(inv.invoiceNumber, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Item Count:', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700)),
+                              Text('${items.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Sync Status:', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700)),
+                              Text(inv.syncStatus ?? 'synced', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Supplier ID:', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700)),
+                              Text(inv.supplierId.length > 12 ? '${inv.supplierId.substring(0, 8)}...' : inv.supplierId, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Invoice UUID (PostgreSQL ID):', style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700)),
+                                    SelectableText(
+                                      inv.id,
+                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.copy, size: 18),
+                                tooltip: 'Copy Database UUID',
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: inv.id));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Copied UUID: ${inv.id}')),
+                                  );
+                                },
                               ),
                             ],
                           ),

@@ -317,20 +317,32 @@ export class PurchasesService {
       throw new AppError(400, 'Invalid supplier.');
     }
 
-    // Check unique supplier invoice number for this business and supplier
+    const canonicalInvoiceNum = (data.supplierInvoiceNumber || (data as any).invoiceNumber || '').trim();
+    if (!canonicalInvoiceNum) {
+      throw new AppError(400, 'Supplier invoice number is required.');
+    }
+
+    // Check unique supplier invoice number or matching ID for this business and supplier (Idempotency)
     const existing = await prisma.purchase_invoices.findFirst({
       where: {
         business_id: businessId,
         supplier_id: supplierId,
-        supplier_invoice_number: data.supplierInvoiceNumber.trim(),
+        OR: [
+          ...(data.id ? [{ id: data.id }] : []),
+          { supplier_invoice_number: canonicalInvoiceNum },
+        ],
         deleted_at: null,
+      },
+      include: {
+        purchase_invoice_items: true,
       },
     });
     if (existing) {
-      throw new AppError(
-        409,
-        `Invoice number '${data.supplierInvoiceNumber}' already submitted for this supplier.`
-      );
+      return {
+        invoice: existing,
+        items: existing.purchase_invoice_items,
+        isDuplicate: true,
+      };
     }
 
     const invoiceId = data.id || randomUUID();
@@ -345,7 +357,8 @@ export class PurchasesService {
         const quantityInt = Math.round(item.quantity * 1000);
         const unitPriceBig = BigInt(item.unitPricePaise);
         const lineGrossPaise = (BigInt(quantityInt) * unitPriceBig) / 1000n;
-        const gstRateInt = Math.round(item.gstPercentage * 100);
+        const gstRate = item.gstPercentage ?? (item as any).gstRatePercent ?? 0;
+        const gstRateInt = Math.round(gstRate * 100);
         const lineTaxPaise = (lineGrossPaise * BigInt(gstRateInt)) / 10000n;
         const lineTotalPaise = lineGrossPaise + lineTaxPaise;
 
@@ -359,7 +372,7 @@ export class PurchasesService {
           product_name_snapshot: item.productName,
           quantity: item.quantity,
           unit_price_paise: unitPriceBig,
-          gst_percentage_snapshot: item.gstPercentage,
+          gst_percentage_snapshot: gstRate,
           tax_amount_paise: lineTaxPaise,
           total_amount_paise: lineTotalPaise,
         });
@@ -378,7 +391,7 @@ export class PurchasesService {
           business_id: businessId,
           supplier_id: supplierId,
           purchase_order_id: data.purchaseOrderId || null,
-          supplier_invoice_number: data.supplierInvoiceNumber.trim(),
+          supplier_invoice_number: canonicalInvoiceNum,
           internal_reference_number: data.internalReferenceNumber?.trim() || null,
           invoice_date: invoiceDate,
           subtotal_paise: subtotalPaise,
@@ -399,6 +412,7 @@ export class PurchasesService {
       return {
         invoice,
         items: preparedItems,
+        isDuplicate: false,
       };
     });
   }

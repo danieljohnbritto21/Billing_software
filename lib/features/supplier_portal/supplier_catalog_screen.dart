@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../../core/sync/sync_provider.dart';
-import '../auth/auth_provider.dart';
 import '../products/product_repository.dart';
 
 class SupplierCatalogScreen extends ConsumerStatefulWidget {

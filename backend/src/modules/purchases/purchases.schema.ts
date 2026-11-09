@@ -1,13 +1,22 @@
 import { z } from 'zod';
 
-export const purchaseOrderItemInputSchema = z.object({
-  id: z.string().uuid().optional(),
-  productId: z.string().uuid().optional(),
-  productName: z.string().min(1).max(150),
-  quantity: z.number().positive(),
-  unitPricePaise: z.number().int().nonnegative(),
-  gstPercentage: z.number().nonnegative().default(0),
-});
+export const purchaseOrderItemInputSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    productId: z.string().uuid().optional(),
+    productName: z.string().min(1).max(150),
+    productCode: z.string().max(60).optional(),
+    unit: z.string().max(30).optional(),
+    quantity: z.number().positive(),
+    unitPricePaise: z.number().int().nonnegative(),
+    gstPercentage: z.number().nonnegative().optional(),
+    gstRatePercent: z.number().nonnegative().optional(),
+  })
+  .transform((val) => ({
+    ...val,
+    gstPercentage: val.gstPercentage ?? val.gstRatePercent ?? 0,
+    gstRatePercent: val.gstRatePercent ?? val.gstPercentage ?? 0,
+  }));
 
 export const createPurchaseOrderSchema = z.object({
   id: z.string().uuid().optional(),
@@ -35,25 +44,53 @@ export const receivePurchaseOrderSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const purchaseInvoiceItemInputSchema = z.object({
-  id: z.string().uuid().optional(),
-  productId: z.string().uuid().optional(),
-  productName: z.string().min(1).max(150),
-  quantity: z.number().positive(),
-  unitPricePaise: z.number().int().nonnegative(),
-  gstPercentage: z.number().nonnegative().default(0),
-});
+export const purchaseInvoiceItemInputSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    productId: z.string().uuid().optional(),
+    productName: z.string().min(1).max(150),
+    productCode: z.string().max(60).optional(),
+    unit: z.string().max(30).optional(),
+    quantity: z.number().positive(),
+    unitPricePaise: z.number().int().nonnegative(),
+    gstPercentage: z.number().nonnegative().optional(),
+    gstRatePercent: z.number().nonnegative().optional(),
+  })
+  .transform((val) => ({
+    ...val,
+    gstPercentage: val.gstPercentage ?? val.gstRatePercent ?? 0,
+    gstRatePercent: val.gstRatePercent ?? val.gstPercentage ?? 0,
+  }));
 
-export const createPurchaseInvoiceSchema = z.object({
-  id: z.string().uuid().optional(),
-  supplierId: z.string().uuid().optional(), // For Admin creation; for Supplier, taken from token
-  purchaseOrderId: z.string().uuid().optional(),
-  supplierInvoiceNumber: z.string().min(1).max(80),
-  internalReferenceNumber: z.string().max(80).optional(),
-  invoiceDate: z.string().optional(),
-  discountPaise: z.number().int().nonnegative().default(0),
-  items: z.array(purchaseInvoiceItemInputSchema).min(1),
-});
+export const createPurchaseInvoiceSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    supplierId: z.string().uuid().optional(), // For Admin creation; for Supplier, taken from token
+    purchaseOrderId: z.string().uuid().optional(),
+    supplierInvoiceNumber: z.string().max(80).optional(),
+    invoiceNumber: z.string().max(80).optional(),
+    internalReferenceNumber: z.string().max(80).optional(),
+    invoiceDate: z.string().optional(),
+    dueDate: z.string().optional(),
+    notes: z.string().optional(),
+    discountPaise: z.number().int().nonnegative().default(0),
+    items: z.array(purchaseInvoiceItemInputSchema).min(1),
+  })
+  .refine((data) => {
+    const raw = (data.supplierInvoiceNumber || data.invoiceNumber || '').trim();
+    return raw.length >= 1 && raw.length <= 80;
+  }, {
+    message: 'Either supplierInvoiceNumber or invoiceNumber is required (1-80 characters)',
+    path: ['supplierInvoiceNumber'],
+  })
+  .transform((data) => {
+    const canonicalNum = (data.supplierInvoiceNumber || data.invoiceNumber || '').trim();
+    return {
+      ...data,
+      supplierInvoiceNumber: canonicalNum,
+      invoiceNumber: canonicalNum,
+    };
+  });
 
 export const approveRejectPurchaseInvoiceSchema = z.object({
   action: z.enum(['APPROVE', 'REJECT']),

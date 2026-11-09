@@ -243,15 +243,31 @@ class PurchaseRepository {
 
     final grandTotalPaise = subtotalPaise + totalTaxPaise;
 
+    final itemsPayload = items.map((it) {
+      final gst = (it['gstPercentage'] ?? it['gstRatePercent'] ?? 0.0) as num;
+      return {
+        'id': it['id']?.toString() ?? _uuid.v4(),
+        if (it['productId'] != null) 'productId': it['productId'].toString(),
+        'productName': it['productName'].toString(),
+        if (it['productCode'] != null) 'productCode': it['productCode'].toString(),
+        'quantity': (it['quantity'] as num).toDouble(),
+        'unit': it['unit']?.toString() ?? 'unit',
+        'unitPricePaise': (it['unitPricePaise'] as num).toInt(),
+        'gstPercentage': gst.toDouble(),
+        'gstRatePercent': gst.toDouble(),
+      };
+    }).toList();
+
     final payload = {
       'id': id,
       'supplierId': supplierId,
       if (purchaseOrderId != null) 'purchaseOrderId': purchaseOrderId,
+      'supplierInvoiceNumber': invoiceNumber.trim(),
       'invoiceNumber': invoiceNumber.trim(),
       'invoiceDate': (invoiceDate ?? now).toIso8601String(),
       if (dueDate != null) 'dueDate': dueDate.toIso8601String(),
       if (notes != null) 'notes': notes.trim(),
-      'items': items,
+      'items': itemsPayload,
     };
 
     final api = _api;
@@ -555,11 +571,19 @@ class PurchaseRepository {
         final bizId = item['business_id']?.toString() ?? item['businessId']?.toString() ?? 'biz';
         final supplierId = item['supplier_id']?.toString() ?? item['supplierId']?.toString() ?? '';
         final poId = item['purchase_order_id']?.toString() ?? item['purchaseOrderId']?.toString();
-        final invoiceNum = item['invoice_number']?.toString() ?? item['invoiceNumber']?.toString() ?? 'INV';
-        final verStatus = item['verification_status']?.toString() ?? item['verificationStatus']?.toString() ?? 'PENDING_VERIFICATION';
+        final invoiceNum = item['supplier_invoice_number']?.toString() ??
+            item['supplierInvoiceNumber']?.toString() ??
+            item['invoice_number']?.toString() ??
+            item['invoiceNumber']?.toString() ??
+            'INV';
+        final verStatus = item['verification_status']?.toString() ??
+            item['verificationStatus']?.toString() ??
+            item['invoice_status']?.toString() ??
+            item['invoiceStatus']?.toString() ??
+            'PENDING_VERIFICATION';
         final payStatus = item['payment_status']?.toString() ?? item['paymentStatus']?.toString() ?? 'PENDING';
         final subtotal = _parseInt(item['subtotal_paise'] ?? item['subtotalPaise']);
-        final tax = _parseInt(item['tax_paise'] ?? item['taxPaise']);
+        final tax = _parseInt(item['tax_paise'] ?? item['taxPaise'] ?? item['tax_amount_paise'] ?? item['taxAmountPaise']);
         final grandTotal = _parseInt(item['grand_total_paise'] ?? item['grandTotalPaise']);
         final paid = _parseInt(item['amount_paid_paise'] ?? item['amountPaidPaise']);
         final due = _parseInt(item['balance_due_paise'] ?? item['balanceDuePaise'], grandTotal - paid);
@@ -595,6 +619,41 @@ class PurchaseRepository {
             syncStatus: const Value('synced'),
           ),
         );
+
+        final rawItems = item['purchase_invoice_items'] ?? item['purchaseInvoiceItems'];
+        if (rawItems is List) {
+          for (final rawIt in rawItems) {
+            final it = rawIt as Map<String, dynamic>;
+            final itId = it['id']?.toString() ?? _uuid.v4();
+            final pName = it['product_name_snapshot']?.toString() ?? it['productName']?.toString() ?? 'Item';
+            final pCode = it['product_code_snapshot']?.toString() ?? it['productCode']?.toString();
+            final pId = it['product_id']?.toString() ?? it['productId']?.toString();
+            final qty = (it['quantity'] as num?)?.toDouble() ?? 1.0;
+            final uPrice = _parseInt(it['unit_price_paise'] ?? it['unitPricePaise']);
+            final gst = (it['gst_percentage_snapshot'] ?? it['gstPercentage'] ?? it['gstRatePercent'] as num?)?.toDouble() ?? 0.0;
+            final taxable = (qty * uPrice).round();
+            final lineTax = _parseInt(it['tax_amount_paise'] ?? it['taxAmountPaise'], (taxable * gst / 100.0).round());
+            final lineTotal = _parseInt(it['total_amount_paise'] ?? it['totalAmountPaise'], taxable + lineTax);
+
+            await _db.into(_db.purchaseInvoiceItems).insertOnConflictUpdate(
+              PurchaseInvoiceItemEntry(
+                id: itId,
+                purchaseInvoiceId: id,
+                productId: pId,
+                productName: pName,
+                productCode: pCode,
+                quantity: qty,
+                unit: it['unit']?.toString() ?? 'unit',
+                unitPricePaise: uPrice,
+                gstRatePercent: gst,
+                taxableAmountPaise: taxable,
+                taxAmountPaise: lineTax,
+                totalAmountPaise: lineTotal,
+                createdAt: invDate,
+              ),
+            );
+          }
+        }
       }
     } catch (_) {}
   }

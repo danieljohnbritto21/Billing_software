@@ -288,6 +288,7 @@ class _CreateSupplierInvoiceScreenState extends ConsumerState<CreateSupplierInvo
           'unit': it.unit.trim().isNotEmpty ? it.unit.trim() : 'unit',
           'unitPricePaise': unitPricePaise,
           'gstRatePercent': it.gstRatePercent,
+          'gstPercentage': it.gstRatePercent,
         };
       }).toList();
 

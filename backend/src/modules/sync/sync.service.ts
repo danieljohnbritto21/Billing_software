@@ -107,6 +107,33 @@ export class SyncService {
         cur++;
       }
 
+      // 2d. Baseline purchase_invoices
+      const initialPurchaseInvoices = await prisma.purchase_invoices.findMany({
+        where: {
+          business_id: businessId,
+          ...(isSupplier && supplierId ? { supplier_id: supplierId } : {}),
+        },
+        include: {
+          purchase_invoice_items: true,
+          supplier_payments: true,
+        },
+        orderBy: { created_at: 'asc' },
+      });
+
+      for (const pi of initialPurchaseInvoices) {
+        (pi as any).invoice_number = pi.supplier_invoice_number;
+        (pi as any).invoiceNumber = pi.supplier_invoice_number;
+        baselineChanges.push({
+          cursor: cur,
+          entityName: 'purchase_invoices',
+          recordId: pi.id,
+          operation: 'INSERT',
+          data: pi,
+          version: pi.server_version || cur,
+        });
+        cur++;
+      }
+
       const effectiveNextCursor = latestServerCursor > 0n ? latestServerCursor : cur;
       return {
         changes: baselineChanges,
@@ -265,6 +292,10 @@ export class SyncService {
               supplier_payments: true,
             },
           });
+          if (data) {
+            (data as any).invoice_number = (data as any).supplier_invoice_number;
+            (data as any).invoiceNumber = (data as any).supplier_invoice_number;
+          }
           break;
         case 'supplier_payments':
           data = await prisma.supplier_payments.findFirst({
@@ -532,6 +563,13 @@ export class SyncService {
                 resolvedSupplierId = defSup ? defSup.id : null;
               }
 
+              const sellingPaise = p.sellingPricePaise !== undefined
+                ? BigInt(p.sellingPricePaise)
+                : (p.sellingPriceRupees !== undefined ? BigInt(Math.round(Number(p.sellingPriceRupees) * 100)) : 0n);
+              const costPaise = p.costPricePaise !== undefined
+                ? BigInt(p.costPricePaise)
+                : (p.costPriceRupees !== undefined ? BigInt(Math.round(Number(p.costPriceRupees) * 100)) : 0n);
+
               const savedProduct = await prisma.products.upsert({
                 where: {
                   business_id_id: {
@@ -545,8 +583,8 @@ export class SyncService {
                   name: p.name,
                   code: p.code,
                   description: p.description,
-                  cost_price_paise: BigInt(p.costPricePaise ?? 0),
-                  selling_price_paise: BigInt(p.sellingPricePaise),
+                  cost_price_paise: costPaise,
+                  selling_price_paise: sellingPaise,
                   gst_rate_percent: p.gstRatePercent ?? 0,
                   is_tax_inclusive: p.isTaxInclusive ?? true,
                   unit: p.unit ?? 'plate',
@@ -561,8 +599,8 @@ export class SyncService {
                   name: p.name,
                   code: p.code,
                   description: p.description,
-                  cost_price_paise: BigInt(p.costPricePaise ?? 0),
-                  selling_price_paise: BigInt(p.sellingPricePaise),
+                  cost_price_paise: costPaise,
+                  selling_price_paise: sellingPaise,
                   gst_rate_percent: p.gstRatePercent ?? 0,
                   is_tax_inclusive: p.isTaxInclusive ?? true,
                   unit: p.unit ?? 'plate',
@@ -749,12 +787,27 @@ export class SyncService {
             const p = item.payload;
             if (item.operation === 'INSERT') {
               try {
-                const pi = await purchasesService.createPurchaseInvoice(businessId, p as any, isSupplier ? supplierId : undefined);
+                const invoiceNum = (p.supplierInvoiceNumber || p.invoiceNumber || '').trim();
+                const normalizedPayload = {
+                  ...p,
+                  id: item.recordId || p.id,
+                  supplierInvoiceNumber: invoiceNum,
+                  invoiceNumber: invoiceNum,
+                  items: Array.isArray(p.items)
+                    ? p.items.map((it: any) => ({
+                        ...it,
+                        gstPercentage: it.gstPercentage ?? it.gstRatePercent ?? 0,
+                        gstRatePercent: it.gstRatePercent ?? it.gstPercentage ?? 0,
+                      }))
+                    : [],
+                };
+                const pi = await purchasesService.createPurchaseInvoice(businessId, normalizedPayload as any, isSupplier ? supplierId : undefined);
                 results.push({ recordId: item.recordId, status: 'synced', entity: 'purchase_invoices', piId: pi.invoice.id });
               } catch (e: any) {
                 if (e.statusCode === 409 || e.message?.includes('already submitted')) {
+                  const invoiceNum = (p.supplierInvoiceNumber || p.invoiceNumber || '').trim();
                   const existingPi = await prisma.purchase_invoices.findFirst({
-                    where: { business_id: businessId, supplier_invoice_number: p.supplierInvoiceNumber },
+                    where: { business_id: businessId, supplier_invoice_number: invoiceNum },
                   });
                   results.push({ recordId: item.recordId, status: 'synced', entity: 'purchase_invoices', piId: existingPi?.id || item.recordId });
                 } else {
