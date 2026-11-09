@@ -51,10 +51,22 @@ class ApiClient {
   }
 
   Future<String> getBaseUrl() async {
-    if (_cachedBaseUrl != null && _cachedBaseUrl!.isNotEmpty) return _cachedBaseUrl!;
+    if (_cachedBaseUrl != null && _cachedBaseUrl!.isNotEmpty) {
+      if (!kIsWeb && Platform.isAndroid && (_cachedBaseUrl!.contains('127.0.0.1') || _cachedBaseUrl!.contains('localhost'))) {
+        _cachedBaseUrl = productionApiUrl;
+        unawaited(setBaseUrl(productionApiUrl));
+      }
+      return _cachedBaseUrl!;
+    }
     final setting = await (_db.select(_db.appSettings)..where((s) => s.key.equals('server_api_url'))).getSingleOrNull();
     if (setting != null && setting.value.trim().isNotEmpty) {
-      _cachedBaseUrl = setting.value.trim();
+      final val = setting.value.trim();
+      if (!kIsWeb && Platform.isAndroid && (val.contains('127.0.0.1') || val.contains('localhost'))) {
+        _cachedBaseUrl = productionApiUrl;
+        await setBaseUrl(productionApiUrl);
+        return _cachedBaseUrl!;
+      }
+      _cachedBaseUrl = val;
       return _cachedBaseUrl!;
     }
     _cachedBaseUrl = defaultBaseUrl;
@@ -63,7 +75,15 @@ class ApiClient {
 
   Future<String?> getConfiguredBaseUrl() async {
     final setting = await (_db.select(_db.appSettings)..where((s) => s.key.equals('server_api_url'))).getSingleOrNull();
-    return setting?.value;
+    if (setting != null && setting.value.trim().isNotEmpty) {
+      final val = setting.value.trim();
+      if (!kIsWeb && Platform.isAndroid && (val.contains('127.0.0.1') || val.contains('localhost'))) {
+        await setBaseUrl(productionApiUrl);
+        return productionApiUrl;
+      }
+      return val;
+    }
+    return null;
   }
 
   void clearCachedBaseUrl() {

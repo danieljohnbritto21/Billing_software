@@ -49,6 +49,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         .login(username, password, isSupplier: _isSupplierPortal);
 
     if (success && mounted) {
+      try {
+        ref.read(syncServiceProvider).syncNow();
+      } catch (_) {}
+
       final user = ref.read(authProvider).user;
       final role = user?.role.toLowerCase();
       if (_isSupplierPortal || role == AppConstants.roleSupplier || user?.supplierId != null) {

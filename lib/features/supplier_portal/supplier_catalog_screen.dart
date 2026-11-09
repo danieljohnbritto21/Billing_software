@@ -27,8 +27,6 @@ class _SupplierCatalogScreenState extends ConsumerState<SupplierCatalogScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final user = ref.watch(currentUserProvider);
-    final supplierId = ref.watch(apiClientProvider).supplierId ?? user?.supplierId ?? '';
     final productRepo = ref.watch(productRepositoryProvider);
 
     return Scaffold(

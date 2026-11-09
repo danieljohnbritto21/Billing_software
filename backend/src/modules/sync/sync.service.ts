@@ -515,18 +515,21 @@ export class SyncService {
               }
 
               // Resolve product supplier_id
-              let resolvedSupplierId: string;
+              let resolvedSupplierId: string | null = null;
               if (isSupplier && supplierId) {
                 resolvedSupplierId = supplierId;
               } else if (p.supplierId) {
-                resolvedSupplierId = p.supplierId;
+                const supExists = await prisma.suppliers.findFirst({
+                  where: { id: p.supplierId, business_id: businessId },
+                });
+                resolvedSupplierId = supExists ? supExists.id : null;
               } else if (existing?.supplier_id) {
                 resolvedSupplierId = existing.supplier_id;
               } else {
                 const defSup = await prisma.suppliers.findFirst({
                   where: { business_id: businessId, supplier_code: 'SUP-DEFAULT' },
                 });
-                resolvedSupplierId = defSup ? defSup.id : randomUUID();
+                resolvedSupplierId = defSup ? defSup.id : null;
               }
 
               const savedProduct = await prisma.products.upsert({
@@ -676,7 +679,7 @@ export class SyncService {
           }
           case 'invoices': {
             const p = item.payload;
-            if (item.operation === 'INSERT' || item.operation === 'UPDATE') {
+            if (item.operation === 'INSERT') {
               const inv = await invoicesService.createInvoice(
                 businessId,
                 p.cashierId,
@@ -684,6 +687,45 @@ export class SyncService {
                 p as any
               );
               results.push({ recordId: item.recordId, status: 'synced', entity: 'invoices', invoiceId: inv?.id || item.recordId });
+            } else if (item.operation === 'UPDATE') {
+              const existing = await prisma.invoices.findFirst({
+                where: { id: item.recordId, business_id: businessId },
+              });
+              if (existing) {
+                const paidBig = p.paidAmountPaise != null ? BigInt(p.paidAmountPaise) : existing.paid_amount_paise;
+                const updatedInv = await prisma.invoices.update({
+                  where: { id: item.recordId },
+                  data: {
+                    order_status: p.orderStatus || existing.order_status,
+                    payment_status: p.paymentStatus || existing.payment_status,
+                    paid_amount_paise: paidBig,
+                  },
+                });
+                if (existing.order_id) {
+                  const grandTotalBig = existing.grand_total_paise;
+                  const balanceDueBig = grandTotalBig > paidBig ? grandTotalBig - paidBig : 0n;
+                  await prisma.orders.update({
+                    where: { id: existing.order_id },
+                    data: {
+                      order_status: p.orderStatus || undefined,
+                      payment_status: p.paymentStatus || undefined,
+                      amount_paid_paise: paidBig,
+                      balance_due_paise: balanceDueBig,
+                    },
+                  }).catch(() => {});
+                }
+                results.push({ recordId: item.recordId, status: 'synced', entity: 'invoices', invoiceId: updatedInv.id });
+              } else if (p.items && p.subtotalPaise != null) {
+                const inv = await invoicesService.createInvoice(
+                  businessId,
+                  p.cashierId,
+                  p.cashierName,
+                  p as any
+                );
+                results.push({ recordId: item.recordId, status: 'synced', entity: 'invoices', invoiceId: inv?.id || item.recordId });
+              } else {
+                results.push({ recordId: item.recordId, status: 'synced', entity: 'invoices', invoiceId: item.recordId });
+              }
             }
             break;
           }
@@ -706,8 +748,19 @@ export class SyncService {
           case 'purchase_invoices': {
             const p = item.payload;
             if (item.operation === 'INSERT') {
-              const pi = await purchasesService.createPurchaseInvoice(businessId, p as any, isSupplier ? supplierId : undefined);
-              results.push({ recordId: item.recordId, status: 'synced', entity: 'purchase_invoices', piId: pi.invoice.id });
+              try {
+                const pi = await purchasesService.createPurchaseInvoice(businessId, p as any, isSupplier ? supplierId : undefined);
+                results.push({ recordId: item.recordId, status: 'synced', entity: 'purchase_invoices', piId: pi.invoice.id });
+              } catch (e: any) {
+                if (e.statusCode === 409 || e.message?.includes('already submitted')) {
+                  const existingPi = await prisma.purchase_invoices.findFirst({
+                    where: { business_id: businessId, supplier_invoice_number: p.supplierInvoiceNumber },
+                  });
+                  results.push({ recordId: item.recordId, status: 'synced', entity: 'purchase_invoices', piId: existingPi?.id || item.recordId });
+                } else {
+                  throw e;
+                }
+              }
             }
             break;
           }
