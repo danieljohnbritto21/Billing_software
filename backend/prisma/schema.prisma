@@ -36,6 +36,7 @@ model businesses {
   purchase_orders       purchase_orders[]
   purchase_invoices     purchase_invoices[]
   supplier_payments     supplier_payments[]
+  kot_records           kot_records[]
   sync_change_log       sync_change_log[]
   user_sessions         user_sessions[]
   users                 users[]
@@ -225,6 +226,7 @@ model products {
   product_images         product_images[]
   purchase_order_items   purchase_order_items[]
   purchase_invoice_items purchase_invoice_items[]
+  kot_items              kot_items[]
 
   categories categories? @relation(fields: [business_id, category_id], references: [business_id, id], onDelete: NoAction, onUpdate: NoAction, map: "fk_products_category_business")
   businesses businesses  @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -449,29 +451,39 @@ model payments {
 // ==========================================
 
 model kot_records {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  invoice_id      String?  @db.Uuid
-  order_id        String?  @db.Uuid
-  kot_number      String   @db.VarChar(60)
-  table_number    String?  @db.VarChar(40)
-  order_type      String   @db.VarChar(40)
-  items_json      Json
-  printed_at      DateTime @default(now()) @db.Timestamptz(6)
-  reprinted_count Int      @default(0)
-  server_version  BigInt?  @default(autoincrement())
-  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+  id                      String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id             String?            @db.Uuid
+  invoice_id              String?            @db.Uuid
+  order_id                String?            @db.Uuid
+  purchase_invoice_id     String?            @db.Uuid
+  kot_number              String             @db.VarChar(60)
+  supplier_invoice_number String?            @db.VarChar(80)
+  table_number            String?            @db.VarChar(40)
+  order_type              String             @db.VarChar(40)
+  items_json              Json
+  printed_at              DateTime           @default(now()) @db.Timestamptz(6)
+  reprinted_count         Int                @default(0)
+  server_version          BigInt?            @default(autoincrement())
+  updated_at              DateTime           @default(now()) @db.Timestamptz(6)
 
-  invoices  invoices?   @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  orders    orders?     @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  kot_items kot_items[]
+  businesses        businesses?        @relation(fields: [business_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invoices          invoices?          @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  orders            orders?            @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  purchase_invoices purchase_invoices? @relation(fields: [purchase_invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  kot_items         kot_items[]
+
+  @@index([purchase_invoice_id], map: "idx_kot_records_purchase_invoice")
+  @@index([business_id], map: "idx_kot_records_business")
 }
 
 model kot_items {
   id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   kot_id                String   @db.Uuid
+  product_id            String?  @db.Uuid
   order_item_id         String?  @db.Uuid
   product_name_snapshot String   @db.VarChar(150)
   quantity              Decimal  @db.Decimal(10, 3)
+  unit                  String?  @default("unit") @db.VarChar(30)
   special_instructions  String?
   item_status           String   @default("PENDING") @db.VarChar(30)
   created_at            DateTime @default(now()) @db.Timestamptz(6)
@@ -479,8 +491,10 @@ model kot_items {
 
   kot_records kot_records  @relation(fields: [kot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   order_items order_items? @relation(fields: [order_item_id], references: [id], onUpdate: NoAction)
+  products    products?    @relation(fields: [product_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([kot_id], map: "idx_kot_items_kot")
+  @@index([product_id], map: "idx_kot_items_product")
 }
 
 // ==========================================
@@ -561,6 +575,7 @@ model purchase_invoices {
   purchase_orders        purchase_orders?         @relation(fields: [purchase_order_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   purchase_invoice_items purchase_invoice_items[]
   supplier_payments      supplier_payments[]
+  kot_records            kot_records[]
 
   @@unique([business_id, supplier_id, supplier_invoice_number], map: "uq_supplier_invoice_unique")
   @@unique([business_id, id], map: "uq_purchase_invoices_business_id")

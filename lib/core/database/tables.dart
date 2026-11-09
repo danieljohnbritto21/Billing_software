@@ -416,13 +416,36 @@ class DiningTables extends Table {
 @DataClassName('KotRecordEntry')
 class KotRecords extends Table {
   TextColumn get id => text()();
-  TextColumn get invoiceId => text()();
+  TextColumn get businessId => text().nullable()();
+  TextColumn get invoiceId => text().nullable()();
+  TextColumn get purchaseInvoiceId => text().nullable()();
+  TextColumn get supplierInvoiceNumber => text().nullable()();
   TextColumn get kotNumber => text()();
   TextColumn get orderType => text()();
   TextColumn get tableNumber => text().nullable()();
   TextColumn get itemsJson => text()();
   IntColumn get reprintCount => integer().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime()();
+  Int64Column get serverVersion => int64().nullable()();
+  TextColumn get syncStatus => text().nullable().withDefault(const Constant('synced'))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClassName('KotItemEntry')
+class KotItems extends Table {
+  TextColumn get id => text()();
+  TextColumn get kotId => text()();
+  TextColumn get productId => text().nullable()();
+  TextColumn get orderItemId => text().nullable()();
+  TextColumn get productNameSnapshot => text()();
+  RealColumn get quantity => real()();
+  TextColumn get unit => text().nullable().withDefault(const Constant('unit'))();
+  TextColumn get specialInstructions => text().nullable()();
+  TextColumn get itemStatus => text().withDefault(const Constant('PENDING'))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
   Int64Column get serverVersion => int64().nullable()();
   TextColumn get syncStatus => text().nullable().withDefault(const Constant('synced'))();
 

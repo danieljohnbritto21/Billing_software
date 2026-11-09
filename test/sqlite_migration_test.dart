@@ -15,8 +15,8 @@ void main() {
       await db.close();
     });
 
-    test('Schema version is 7 and all 23 tables are initialized', () async {
-      expect(db.schemaVersion, 7);
+    test('Schema version is 8 and all 24 tables are initialized', () async {
+      expect(db.schemaVersion, 8);
 
       // Verify all tables exist and can be queried without error
       final categories = await db.select(db.categories).get();
@@ -78,6 +78,9 @@ void main() {
 
       final kotRecords = await db.select(db.kotRecords).get();
       expect(kotRecords, isEmpty);
+
+      final kotItems = await db.select(db.kotItems).get();
+      expect(kotItems, isEmpty);
 
       final syncCursors = await db.select(db.syncCursors).get();
       expect(syncCursors, isEmpty);

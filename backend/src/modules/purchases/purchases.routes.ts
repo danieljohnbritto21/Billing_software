@@ -16,6 +16,7 @@ import {
   recordSupplierPaymentSchema,
 } from './purchases.schema';
 import { purchasesService } from './purchases.service';
+import { kotService } from '../kot/kot.service';
 import { apiSuccess, apiPaginated } from '../../utils/response';
 
 // ==========================================
@@ -221,6 +222,24 @@ adminPurchaseInvoicesRouter.post(
   }
 );
 
+adminPurchaseInvoicesRouter.post('/:id/complete', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await purchasesService.completePurchaseInvoice(req.user!.businessId, req.params.id);
+    return apiSuccess(res, result, 'Purchase invoice marked as COMPLETED successfully');
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminPurchaseInvoicesRouter.get('/:id/kots', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await kotService.getKotsByPurchaseInvoiceId(req.user!.businessId, req.params.id);
+    return apiSuccess(res, result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ==========================================
 // 3. ADMIN SUPPLIER PAYMENTS ROUTER
 // Mounted at: /api/v1/admin/supplier-payments
@@ -353,6 +372,52 @@ supplierPurchasesRouter.post('/invoices/:id/submit', async (req: Request, res: R
       req.user!.supplierId!
     );
     return apiSuccess(res, result, 'Invoice submitted successfully');
+  } catch (err) {
+    next(err);
+  }
+});
+
+supplierPurchasesRouter.post(
+  '/invoices/:id/payments',
+  validateBody(recordSupplierPaymentSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await purchasesService.recordSupplierPayment(
+        req.user!.businessId,
+        req.user!.userId,
+        {
+          ...req.body,
+          supplierId: req.user!.supplierId!,
+          purchaseInvoiceId: req.params.id,
+        }
+      );
+      return apiSuccess(res, result, 'Supplier payment recorded successfully', 201);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+supplierPurchasesRouter.post('/invoices/:id/complete', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await purchasesService.completePurchaseInvoice(
+      req.user!.businessId,
+      req.params.id,
+      req.user!.supplierId!
+    );
+    return apiSuccess(res, result, 'Invoice marked as COMPLETED successfully');
+  } catch (err) {
+    next(err);
+  }
+});
+
+supplierPurchasesRouter.get('/invoices/:id/kots', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await kotService.getKotsByPurchaseInvoiceId(
+      req.user!.businessId,
+      req.params.id
+    );
+    return apiSuccess(res, result);
   } catch (err) {
     next(err);
   }

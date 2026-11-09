@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { requireAuth, requireRole } from '../../middleware/auth.middleware';
+import { requireAuth, requireActiveUser } from '../../middleware/auth.middleware';
 import { validateBody } from '../../middleware/validate.middleware';
 import { createKotSchema } from './kot.schema';
 import { kotService } from './kot.service';
@@ -7,7 +7,7 @@ import { apiSuccess } from '../../utils/response';
 
 export const kotRouter = Router();
 
-kotRouter.use(requireAuth, requireRole('ADMIN'));
+kotRouter.use(requireAuth, requireActiveUser);
 
 kotRouter.get(
   '/',
@@ -15,7 +15,27 @@ kotRouter.get(
     try {
       const invoiceId = req.query.invoiceId as string | undefined;
       const orderId = req.query.orderId as string | undefined;
-      const kots = await kotService.listKot(req.user!.businessId, { invoiceId, orderId });
+      const purchaseInvoiceId = req.query.purchaseInvoiceId as string | undefined;
+      const kots = await kotService.listKot(req.user!.businessId, {
+        invoiceId,
+        orderId,
+        purchaseInvoiceId,
+      });
+      return apiSuccess(res, kots);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+kotRouter.get(
+  '/purchase-invoice/:purchaseInvoiceId',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const kots = await kotService.getKotsByPurchaseInvoiceId(
+        req.user!.businessId,
+        req.params.purchaseInvoiceId
+      );
       return apiSuccess(res, kots);
     } catch (err) {
       next(err);
@@ -25,7 +45,6 @@ kotRouter.get(
 
 kotRouter.get(
   '/:id',
-  requireAuth,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const kot = await kotService.getKotById(req.user!.businessId, req.params.id);
@@ -38,8 +57,6 @@ kotRouter.get(
 
 kotRouter.post(
   '/',
-  requireAuth,
-  requireRole('ADMIN'),
   validateBody(createKotSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -53,8 +70,6 @@ kotRouter.post(
 
 kotRouter.post(
   '/:id/reprint',
-  requireAuth,
-  requireRole('ADMIN'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const updated = await kotService.reprintKot(

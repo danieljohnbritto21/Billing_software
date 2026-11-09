@@ -16601,6 +16601,17 @@ class $KotRecordsTable extends KotRecords
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _businessIdMeta = const VerificationMeta(
+    'businessId',
+  );
+  @override
+  late final GeneratedColumn<String> businessId = GeneratedColumn<String>(
+    'business_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _invoiceIdMeta = const VerificationMeta(
     'invoiceId',
   );
@@ -16608,10 +16619,33 @@ class $KotRecordsTable extends KotRecords
   late final GeneratedColumn<String> invoiceId = GeneratedColumn<String>(
     'invoice_id',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.string,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
   );
+  static const VerificationMeta _purchaseInvoiceIdMeta = const VerificationMeta(
+    'purchaseInvoiceId',
+  );
+  @override
+  late final GeneratedColumn<String> purchaseInvoiceId =
+      GeneratedColumn<String>(
+        'purchase_invoice_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _supplierInvoiceNumberMeta =
+      const VerificationMeta('supplierInvoiceNumber');
+  @override
+  late final GeneratedColumn<String> supplierInvoiceNumber =
+      GeneratedColumn<String>(
+        'supplier_invoice_number',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _kotNumberMeta = const VerificationMeta(
     'kotNumber',
   );
@@ -16705,7 +16739,10 @@ class $KotRecordsTable extends KotRecords
   @override
   List<GeneratedColumn> get $columns => [
     id,
+    businessId,
     invoiceId,
+    purchaseInvoiceId,
+    supplierInvoiceNumber,
     kotNumber,
     orderType,
     tableNumber,
@@ -16732,13 +16769,35 @@ class $KotRecordsTable extends KotRecords
     } else if (isInserting) {
       context.missing(_idMeta);
     }
+    if (data.containsKey('business_id')) {
+      context.handle(
+        _businessIdMeta,
+        businessId.isAcceptableOrUnknown(data['business_id']!, _businessIdMeta),
+      );
+    }
     if (data.containsKey('invoice_id')) {
       context.handle(
         _invoiceIdMeta,
         invoiceId.isAcceptableOrUnknown(data['invoice_id']!, _invoiceIdMeta),
       );
-    } else if (isInserting) {
-      context.missing(_invoiceIdMeta);
+    }
+    if (data.containsKey('purchase_invoice_id')) {
+      context.handle(
+        _purchaseInvoiceIdMeta,
+        purchaseInvoiceId.isAcceptableOrUnknown(
+          data['purchase_invoice_id']!,
+          _purchaseInvoiceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('supplier_invoice_number')) {
+      context.handle(
+        _supplierInvoiceNumberMeta,
+        supplierInvoiceNumber.isAcceptableOrUnknown(
+          data['supplier_invoice_number']!,
+          _supplierInvoiceNumberMeta,
+        ),
+      );
     }
     if (data.containsKey('kot_number')) {
       context.handle(
@@ -16818,10 +16877,22 @@ class $KotRecordsTable extends KotRecords
         DriftSqlType.string,
         data['${effectivePrefix}id'],
       )!,
+      businessId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}business_id'],
+      ),
       invoiceId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}invoice_id'],
-      )!,
+      ),
+      purchaseInvoiceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}purchase_invoice_id'],
+      ),
+      supplierInvoiceNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}supplier_invoice_number'],
+      ),
       kotNumber: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}kot_number'],
@@ -16865,7 +16936,10 @@ class $KotRecordsTable extends KotRecords
 
 class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
   final String id;
-  final String invoiceId;
+  final String? businessId;
+  final String? invoiceId;
+  final String? purchaseInvoiceId;
+  final String? supplierInvoiceNumber;
   final String kotNumber;
   final String orderType;
   final String? tableNumber;
@@ -16876,7 +16950,10 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
   final String? syncStatus;
   const KotRecordEntry({
     required this.id,
-    required this.invoiceId,
+    this.businessId,
+    this.invoiceId,
+    this.purchaseInvoiceId,
+    this.supplierInvoiceNumber,
     required this.kotNumber,
     required this.orderType,
     this.tableNumber,
@@ -16890,7 +16967,18 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
-    map['invoice_id'] = Variable<String>(invoiceId);
+    if (!nullToAbsent || businessId != null) {
+      map['business_id'] = Variable<String>(businessId);
+    }
+    if (!nullToAbsent || invoiceId != null) {
+      map['invoice_id'] = Variable<String>(invoiceId);
+    }
+    if (!nullToAbsent || purchaseInvoiceId != null) {
+      map['purchase_invoice_id'] = Variable<String>(purchaseInvoiceId);
+    }
+    if (!nullToAbsent || supplierInvoiceNumber != null) {
+      map['supplier_invoice_number'] = Variable<String>(supplierInvoiceNumber);
+    }
     map['kot_number'] = Variable<String>(kotNumber);
     map['order_type'] = Variable<String>(orderType);
     if (!nullToAbsent || tableNumber != null) {
@@ -16911,7 +16999,18 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
   KotRecordsCompanion toCompanion(bool nullToAbsent) {
     return KotRecordsCompanion(
       id: Value(id),
-      invoiceId: Value(invoiceId),
+      businessId: businessId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(businessId),
+      invoiceId: invoiceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(invoiceId),
+      purchaseInvoiceId: purchaseInvoiceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(purchaseInvoiceId),
+      supplierInvoiceNumber: supplierInvoiceNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(supplierInvoiceNumber),
       kotNumber: Value(kotNumber),
       orderType: Value(orderType),
       tableNumber: tableNumber == null && nullToAbsent
@@ -16936,7 +17035,14 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return KotRecordEntry(
       id: serializer.fromJson<String>(json['id']),
-      invoiceId: serializer.fromJson<String>(json['invoiceId']),
+      businessId: serializer.fromJson<String?>(json['businessId']),
+      invoiceId: serializer.fromJson<String?>(json['invoiceId']),
+      purchaseInvoiceId: serializer.fromJson<String?>(
+        json['purchaseInvoiceId'],
+      ),
+      supplierInvoiceNumber: serializer.fromJson<String?>(
+        json['supplierInvoiceNumber'],
+      ),
       kotNumber: serializer.fromJson<String>(json['kotNumber']),
       orderType: serializer.fromJson<String>(json['orderType']),
       tableNumber: serializer.fromJson<String?>(json['tableNumber']),
@@ -16952,7 +17058,12 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
-      'invoiceId': serializer.toJson<String>(invoiceId),
+      'businessId': serializer.toJson<String?>(businessId),
+      'invoiceId': serializer.toJson<String?>(invoiceId),
+      'purchaseInvoiceId': serializer.toJson<String?>(purchaseInvoiceId),
+      'supplierInvoiceNumber': serializer.toJson<String?>(
+        supplierInvoiceNumber,
+      ),
       'kotNumber': serializer.toJson<String>(kotNumber),
       'orderType': serializer.toJson<String>(orderType),
       'tableNumber': serializer.toJson<String?>(tableNumber),
@@ -16966,7 +17077,10 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
 
   KotRecordEntry copyWith({
     String? id,
-    String? invoiceId,
+    Value<String?> businessId = const Value.absent(),
+    Value<String?> invoiceId = const Value.absent(),
+    Value<String?> purchaseInvoiceId = const Value.absent(),
+    Value<String?> supplierInvoiceNumber = const Value.absent(),
     String? kotNumber,
     String? orderType,
     Value<String?> tableNumber = const Value.absent(),
@@ -16977,7 +17091,14 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
     Value<String?> syncStatus = const Value.absent(),
   }) => KotRecordEntry(
     id: id ?? this.id,
-    invoiceId: invoiceId ?? this.invoiceId,
+    businessId: businessId.present ? businessId.value : this.businessId,
+    invoiceId: invoiceId.present ? invoiceId.value : this.invoiceId,
+    purchaseInvoiceId: purchaseInvoiceId.present
+        ? purchaseInvoiceId.value
+        : this.purchaseInvoiceId,
+    supplierInvoiceNumber: supplierInvoiceNumber.present
+        ? supplierInvoiceNumber.value
+        : this.supplierInvoiceNumber,
     kotNumber: kotNumber ?? this.kotNumber,
     orderType: orderType ?? this.orderType,
     tableNumber: tableNumber.present ? tableNumber.value : this.tableNumber,
@@ -16992,7 +17113,16 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
   KotRecordEntry copyWithCompanion(KotRecordsCompanion data) {
     return KotRecordEntry(
       id: data.id.present ? data.id.value : this.id,
+      businessId: data.businessId.present
+          ? data.businessId.value
+          : this.businessId,
       invoiceId: data.invoiceId.present ? data.invoiceId.value : this.invoiceId,
+      purchaseInvoiceId: data.purchaseInvoiceId.present
+          ? data.purchaseInvoiceId.value
+          : this.purchaseInvoiceId,
+      supplierInvoiceNumber: data.supplierInvoiceNumber.present
+          ? data.supplierInvoiceNumber.value
+          : this.supplierInvoiceNumber,
       kotNumber: data.kotNumber.present ? data.kotNumber.value : this.kotNumber,
       orderType: data.orderType.present ? data.orderType.value : this.orderType,
       tableNumber: data.tableNumber.present
@@ -17016,7 +17146,10 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
   String toString() {
     return (StringBuffer('KotRecordEntry(')
           ..write('id: $id, ')
+          ..write('businessId: $businessId, ')
           ..write('invoiceId: $invoiceId, ')
+          ..write('purchaseInvoiceId: $purchaseInvoiceId, ')
+          ..write('supplierInvoiceNumber: $supplierInvoiceNumber, ')
           ..write('kotNumber: $kotNumber, ')
           ..write('orderType: $orderType, ')
           ..write('tableNumber: $tableNumber, ')
@@ -17032,7 +17165,10 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
   @override
   int get hashCode => Object.hash(
     id,
+    businessId,
     invoiceId,
+    purchaseInvoiceId,
+    supplierInvoiceNumber,
     kotNumber,
     orderType,
     tableNumber,
@@ -17047,7 +17183,10 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
       identical(this, other) ||
       (other is KotRecordEntry &&
           other.id == this.id &&
+          other.businessId == this.businessId &&
           other.invoiceId == this.invoiceId &&
+          other.purchaseInvoiceId == this.purchaseInvoiceId &&
+          other.supplierInvoiceNumber == this.supplierInvoiceNumber &&
           other.kotNumber == this.kotNumber &&
           other.orderType == this.orderType &&
           other.tableNumber == this.tableNumber &&
@@ -17060,7 +17199,10 @@ class KotRecordEntry extends DataClass implements Insertable<KotRecordEntry> {
 
 class KotRecordsCompanion extends UpdateCompanion<KotRecordEntry> {
   final Value<String> id;
-  final Value<String> invoiceId;
+  final Value<String?> businessId;
+  final Value<String?> invoiceId;
+  final Value<String?> purchaseInvoiceId;
+  final Value<String?> supplierInvoiceNumber;
   final Value<String> kotNumber;
   final Value<String> orderType;
   final Value<String?> tableNumber;
@@ -17072,7 +17214,10 @@ class KotRecordsCompanion extends UpdateCompanion<KotRecordEntry> {
   final Value<int> rowid;
   const KotRecordsCompanion({
     this.id = const Value.absent(),
+    this.businessId = const Value.absent(),
     this.invoiceId = const Value.absent(),
+    this.purchaseInvoiceId = const Value.absent(),
+    this.supplierInvoiceNumber = const Value.absent(),
     this.kotNumber = const Value.absent(),
     this.orderType = const Value.absent(),
     this.tableNumber = const Value.absent(),
@@ -17085,7 +17230,10 @@ class KotRecordsCompanion extends UpdateCompanion<KotRecordEntry> {
   });
   KotRecordsCompanion.insert({
     required String id,
-    required String invoiceId,
+    this.businessId = const Value.absent(),
+    this.invoiceId = const Value.absent(),
+    this.purchaseInvoiceId = const Value.absent(),
+    this.supplierInvoiceNumber = const Value.absent(),
     required String kotNumber,
     required String orderType,
     this.tableNumber = const Value.absent(),
@@ -17096,14 +17244,16 @@ class KotRecordsCompanion extends UpdateCompanion<KotRecordEntry> {
     this.syncStatus = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
-       invoiceId = Value(invoiceId),
        kotNumber = Value(kotNumber),
        orderType = Value(orderType),
        itemsJson = Value(itemsJson),
        createdAt = Value(createdAt);
   static Insertable<KotRecordEntry> custom({
     Expression<String>? id,
+    Expression<String>? businessId,
     Expression<String>? invoiceId,
+    Expression<String>? purchaseInvoiceId,
+    Expression<String>? supplierInvoiceNumber,
     Expression<String>? kotNumber,
     Expression<String>? orderType,
     Expression<String>? tableNumber,
@@ -17116,7 +17266,11 @@ class KotRecordsCompanion extends UpdateCompanion<KotRecordEntry> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (businessId != null) 'business_id': businessId,
       if (invoiceId != null) 'invoice_id': invoiceId,
+      if (purchaseInvoiceId != null) 'purchase_invoice_id': purchaseInvoiceId,
+      if (supplierInvoiceNumber != null)
+        'supplier_invoice_number': supplierInvoiceNumber,
       if (kotNumber != null) 'kot_number': kotNumber,
       if (orderType != null) 'order_type': orderType,
       if (tableNumber != null) 'table_number': tableNumber,
@@ -17131,7 +17285,10 @@ class KotRecordsCompanion extends UpdateCompanion<KotRecordEntry> {
 
   KotRecordsCompanion copyWith({
     Value<String>? id,
-    Value<String>? invoiceId,
+    Value<String?>? businessId,
+    Value<String?>? invoiceId,
+    Value<String?>? purchaseInvoiceId,
+    Value<String?>? supplierInvoiceNumber,
     Value<String>? kotNumber,
     Value<String>? orderType,
     Value<String?>? tableNumber,
@@ -17144,7 +17301,11 @@ class KotRecordsCompanion extends UpdateCompanion<KotRecordEntry> {
   }) {
     return KotRecordsCompanion(
       id: id ?? this.id,
+      businessId: businessId ?? this.businessId,
       invoiceId: invoiceId ?? this.invoiceId,
+      purchaseInvoiceId: purchaseInvoiceId ?? this.purchaseInvoiceId,
+      supplierInvoiceNumber:
+          supplierInvoiceNumber ?? this.supplierInvoiceNumber,
       kotNumber: kotNumber ?? this.kotNumber,
       orderType: orderType ?? this.orderType,
       tableNumber: tableNumber ?? this.tableNumber,
@@ -17163,8 +17324,19 @@ class KotRecordsCompanion extends UpdateCompanion<KotRecordEntry> {
     if (id.present) {
       map['id'] = Variable<String>(id.value);
     }
+    if (businessId.present) {
+      map['business_id'] = Variable<String>(businessId.value);
+    }
     if (invoiceId.present) {
       map['invoice_id'] = Variable<String>(invoiceId.value);
+    }
+    if (purchaseInvoiceId.present) {
+      map['purchase_invoice_id'] = Variable<String>(purchaseInvoiceId.value);
+    }
+    if (supplierInvoiceNumber.present) {
+      map['supplier_invoice_number'] = Variable<String>(
+        supplierInvoiceNumber.value,
+      );
     }
     if (kotNumber.present) {
       map['kot_number'] = Variable<String>(kotNumber.value);
@@ -17200,13 +17372,804 @@ class KotRecordsCompanion extends UpdateCompanion<KotRecordEntry> {
   String toString() {
     return (StringBuffer('KotRecordsCompanion(')
           ..write('id: $id, ')
+          ..write('businessId: $businessId, ')
           ..write('invoiceId: $invoiceId, ')
+          ..write('purchaseInvoiceId: $purchaseInvoiceId, ')
+          ..write('supplierInvoiceNumber: $supplierInvoiceNumber, ')
           ..write('kotNumber: $kotNumber, ')
           ..write('orderType: $orderType, ')
           ..write('tableNumber: $tableNumber, ')
           ..write('itemsJson: $itemsJson, ')
           ..write('reprintCount: $reprintCount, ')
           ..write('createdAt: $createdAt, ')
+          ..write('serverVersion: $serverVersion, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $KotItemsTable extends KotItems
+    with TableInfo<$KotItemsTable, KotItemEntry> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $KotItemsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kotIdMeta = const VerificationMeta('kotId');
+  @override
+  late final GeneratedColumn<String> kotId = GeneratedColumn<String>(
+    'kot_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _productIdMeta = const VerificationMeta(
+    'productId',
+  );
+  @override
+  late final GeneratedColumn<String> productId = GeneratedColumn<String>(
+    'product_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _orderItemIdMeta = const VerificationMeta(
+    'orderItemId',
+  );
+  @override
+  late final GeneratedColumn<String> orderItemId = GeneratedColumn<String>(
+    'order_item_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _productNameSnapshotMeta =
+      const VerificationMeta('productNameSnapshot');
+  @override
+  late final GeneratedColumn<String> productNameSnapshot =
+      GeneratedColumn<String>(
+        'product_name_snapshot',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _quantityMeta = const VerificationMeta(
+    'quantity',
+  );
+  @override
+  late final GeneratedColumn<double> quantity = GeneratedColumn<double>(
+    'quantity',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _unitMeta = const VerificationMeta('unit');
+  @override
+  late final GeneratedColumn<String> unit = GeneratedColumn<String>(
+    'unit',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('unit'),
+  );
+  static const VerificationMeta _specialInstructionsMeta =
+      const VerificationMeta('specialInstructions');
+  @override
+  late final GeneratedColumn<String> specialInstructions =
+      GeneratedColumn<String>(
+        'special_instructions',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _itemStatusMeta = const VerificationMeta(
+    'itemStatus',
+  );
+  @override
+  late final GeneratedColumn<String> itemStatus = GeneratedColumn<String>(
+    'item_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('PENDING'),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<BigInt> serverVersion = GeneratedColumn<BigInt>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.bigInt,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<String> syncStatus = GeneratedColumn<String>(
+    'sync_status',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('synced'),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    kotId,
+    productId,
+    orderItemId,
+    productNameSnapshot,
+    quantity,
+    unit,
+    specialInstructions,
+    itemStatus,
+    createdAt,
+    updatedAt,
+    serverVersion,
+    syncStatus,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'kot_items';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<KotItemEntry> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('kot_id')) {
+      context.handle(
+        _kotIdMeta,
+        kotId.isAcceptableOrUnknown(data['kot_id']!, _kotIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kotIdMeta);
+    }
+    if (data.containsKey('product_id')) {
+      context.handle(
+        _productIdMeta,
+        productId.isAcceptableOrUnknown(data['product_id']!, _productIdMeta),
+      );
+    }
+    if (data.containsKey('order_item_id')) {
+      context.handle(
+        _orderItemIdMeta,
+        orderItemId.isAcceptableOrUnknown(
+          data['order_item_id']!,
+          _orderItemIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('product_name_snapshot')) {
+      context.handle(
+        _productNameSnapshotMeta,
+        productNameSnapshot.isAcceptableOrUnknown(
+          data['product_name_snapshot']!,
+          _productNameSnapshotMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_productNameSnapshotMeta);
+    }
+    if (data.containsKey('quantity')) {
+      context.handle(
+        _quantityMeta,
+        quantity.isAcceptableOrUnknown(data['quantity']!, _quantityMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_quantityMeta);
+    }
+    if (data.containsKey('unit')) {
+      context.handle(
+        _unitMeta,
+        unit.isAcceptableOrUnknown(data['unit']!, _unitMeta),
+      );
+    }
+    if (data.containsKey('special_instructions')) {
+      context.handle(
+        _specialInstructionsMeta,
+        specialInstructions.isAcceptableOrUnknown(
+          data['special_instructions']!,
+          _specialInstructionsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('item_status')) {
+      context.handle(
+        _itemStatusMeta,
+        itemStatus.isAcceptableOrUnknown(data['item_status']!, _itemStatusMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  KotItemEntry map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return KotItemEntry(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      kotId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kot_id'],
+      )!,
+      productId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}product_id'],
+      ),
+      orderItemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}order_item_id'],
+      ),
+      productNameSnapshot: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}product_name_snapshot'],
+      )!,
+      quantity: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}quantity'],
+      )!,
+      unit: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}unit'],
+      ),
+      specialInstructions: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}special_instructions'],
+      ),
+      itemStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}item_status'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.bigInt,
+        data['${effectivePrefix}server_version'],
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sync_status'],
+      ),
+    );
+  }
+
+  @override
+  $KotItemsTable createAlias(String alias) {
+    return $KotItemsTable(attachedDatabase, alias);
+  }
+}
+
+class KotItemEntry extends DataClass implements Insertable<KotItemEntry> {
+  final String id;
+  final String kotId;
+  final String? productId;
+  final String? orderItemId;
+  final String productNameSnapshot;
+  final double quantity;
+  final String? unit;
+  final String? specialInstructions;
+  final String itemStatus;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final BigInt? serverVersion;
+  final String? syncStatus;
+  const KotItemEntry({
+    required this.id,
+    required this.kotId,
+    this.productId,
+    this.orderItemId,
+    required this.productNameSnapshot,
+    required this.quantity,
+    this.unit,
+    this.specialInstructions,
+    required this.itemStatus,
+    required this.createdAt,
+    required this.updatedAt,
+    this.serverVersion,
+    this.syncStatus,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['kot_id'] = Variable<String>(kotId);
+    if (!nullToAbsent || productId != null) {
+      map['product_id'] = Variable<String>(productId);
+    }
+    if (!nullToAbsent || orderItemId != null) {
+      map['order_item_id'] = Variable<String>(orderItemId);
+    }
+    map['product_name_snapshot'] = Variable<String>(productNameSnapshot);
+    map['quantity'] = Variable<double>(quantity);
+    if (!nullToAbsent || unit != null) {
+      map['unit'] = Variable<String>(unit);
+    }
+    if (!nullToAbsent || specialInstructions != null) {
+      map['special_instructions'] = Variable<String>(specialInstructions);
+    }
+    map['item_status'] = Variable<String>(itemStatus);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<BigInt>(serverVersion);
+    }
+    if (!nullToAbsent || syncStatus != null) {
+      map['sync_status'] = Variable<String>(syncStatus);
+    }
+    return map;
+  }
+
+  KotItemsCompanion toCompanion(bool nullToAbsent) {
+    return KotItemsCompanion(
+      id: Value(id),
+      kotId: Value(kotId),
+      productId: productId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(productId),
+      orderItemId: orderItemId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(orderItemId),
+      productNameSnapshot: Value(productNameSnapshot),
+      quantity: Value(quantity),
+      unit: unit == null && nullToAbsent ? const Value.absent() : Value(unit),
+      specialInstructions: specialInstructions == null && nullToAbsent
+          ? const Value.absent()
+          : Value(specialInstructions),
+      itemStatus: Value(itemStatus),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
+      syncStatus: syncStatus == null && nullToAbsent
+          ? const Value.absent()
+          : Value(syncStatus),
+    );
+  }
+
+  factory KotItemEntry.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return KotItemEntry(
+      id: serializer.fromJson<String>(json['id']),
+      kotId: serializer.fromJson<String>(json['kotId']),
+      productId: serializer.fromJson<String?>(json['productId']),
+      orderItemId: serializer.fromJson<String?>(json['orderItemId']),
+      productNameSnapshot: serializer.fromJson<String>(
+        json['productNameSnapshot'],
+      ),
+      quantity: serializer.fromJson<double>(json['quantity']),
+      unit: serializer.fromJson<String?>(json['unit']),
+      specialInstructions: serializer.fromJson<String?>(
+        json['specialInstructions'],
+      ),
+      itemStatus: serializer.fromJson<String>(json['itemStatus']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      serverVersion: serializer.fromJson<BigInt?>(json['serverVersion']),
+      syncStatus: serializer.fromJson<String?>(json['syncStatus']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'kotId': serializer.toJson<String>(kotId),
+      'productId': serializer.toJson<String?>(productId),
+      'orderItemId': serializer.toJson<String?>(orderItemId),
+      'productNameSnapshot': serializer.toJson<String>(productNameSnapshot),
+      'quantity': serializer.toJson<double>(quantity),
+      'unit': serializer.toJson<String?>(unit),
+      'specialInstructions': serializer.toJson<String?>(specialInstructions),
+      'itemStatus': serializer.toJson<String>(itemStatus),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'serverVersion': serializer.toJson<BigInt?>(serverVersion),
+      'syncStatus': serializer.toJson<String?>(syncStatus),
+    };
+  }
+
+  KotItemEntry copyWith({
+    String? id,
+    String? kotId,
+    Value<String?> productId = const Value.absent(),
+    Value<String?> orderItemId = const Value.absent(),
+    String? productNameSnapshot,
+    double? quantity,
+    Value<String?> unit = const Value.absent(),
+    Value<String?> specialInstructions = const Value.absent(),
+    String? itemStatus,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<BigInt?> serverVersion = const Value.absent(),
+    Value<String?> syncStatus = const Value.absent(),
+  }) => KotItemEntry(
+    id: id ?? this.id,
+    kotId: kotId ?? this.kotId,
+    productId: productId.present ? productId.value : this.productId,
+    orderItemId: orderItemId.present ? orderItemId.value : this.orderItemId,
+    productNameSnapshot: productNameSnapshot ?? this.productNameSnapshot,
+    quantity: quantity ?? this.quantity,
+    unit: unit.present ? unit.value : this.unit,
+    specialInstructions: specialInstructions.present
+        ? specialInstructions.value
+        : this.specialInstructions,
+    itemStatus: itemStatus ?? this.itemStatus,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
+    syncStatus: syncStatus.present ? syncStatus.value : this.syncStatus,
+  );
+  KotItemEntry copyWithCompanion(KotItemsCompanion data) {
+    return KotItemEntry(
+      id: data.id.present ? data.id.value : this.id,
+      kotId: data.kotId.present ? data.kotId.value : this.kotId,
+      productId: data.productId.present ? data.productId.value : this.productId,
+      orderItemId: data.orderItemId.present
+          ? data.orderItemId.value
+          : this.orderItemId,
+      productNameSnapshot: data.productNameSnapshot.present
+          ? data.productNameSnapshot.value
+          : this.productNameSnapshot,
+      quantity: data.quantity.present ? data.quantity.value : this.quantity,
+      unit: data.unit.present ? data.unit.value : this.unit,
+      specialInstructions: data.specialInstructions.present
+          ? data.specialInstructions.value
+          : this.specialInstructions,
+      itemStatus: data.itemStatus.present
+          ? data.itemStatus.value
+          : this.itemStatus,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('KotItemEntry(')
+          ..write('id: $id, ')
+          ..write('kotId: $kotId, ')
+          ..write('productId: $productId, ')
+          ..write('orderItemId: $orderItemId, ')
+          ..write('productNameSnapshot: $productNameSnapshot, ')
+          ..write('quantity: $quantity, ')
+          ..write('unit: $unit, ')
+          ..write('specialInstructions: $specialInstructions, ')
+          ..write('itemStatus: $itemStatus, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('serverVersion: $serverVersion, ')
+          ..write('syncStatus: $syncStatus')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    kotId,
+    productId,
+    orderItemId,
+    productNameSnapshot,
+    quantity,
+    unit,
+    specialInstructions,
+    itemStatus,
+    createdAt,
+    updatedAt,
+    serverVersion,
+    syncStatus,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is KotItemEntry &&
+          other.id == this.id &&
+          other.kotId == this.kotId &&
+          other.productId == this.productId &&
+          other.orderItemId == this.orderItemId &&
+          other.productNameSnapshot == this.productNameSnapshot &&
+          other.quantity == this.quantity &&
+          other.unit == this.unit &&
+          other.specialInstructions == this.specialInstructions &&
+          other.itemStatus == this.itemStatus &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.serverVersion == this.serverVersion &&
+          other.syncStatus == this.syncStatus);
+}
+
+class KotItemsCompanion extends UpdateCompanion<KotItemEntry> {
+  final Value<String> id;
+  final Value<String> kotId;
+  final Value<String?> productId;
+  final Value<String?> orderItemId;
+  final Value<String> productNameSnapshot;
+  final Value<double> quantity;
+  final Value<String?> unit;
+  final Value<String?> specialInstructions;
+  final Value<String> itemStatus;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<BigInt?> serverVersion;
+  final Value<String?> syncStatus;
+  final Value<int> rowid;
+  const KotItemsCompanion({
+    this.id = const Value.absent(),
+    this.kotId = const Value.absent(),
+    this.productId = const Value.absent(),
+    this.orderItemId = const Value.absent(),
+    this.productNameSnapshot = const Value.absent(),
+    this.quantity = const Value.absent(),
+    this.unit = const Value.absent(),
+    this.specialInstructions = const Value.absent(),
+    this.itemStatus = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.serverVersion = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  KotItemsCompanion.insert({
+    required String id,
+    required String kotId,
+    this.productId = const Value.absent(),
+    this.orderItemId = const Value.absent(),
+    required String productNameSnapshot,
+    required double quantity,
+    this.unit = const Value.absent(),
+    this.specialInstructions = const Value.absent(),
+    this.itemStatus = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.serverVersion = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       kotId = Value(kotId),
+       productNameSnapshot = Value(productNameSnapshot),
+       quantity = Value(quantity),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<KotItemEntry> custom({
+    Expression<String>? id,
+    Expression<String>? kotId,
+    Expression<String>? productId,
+    Expression<String>? orderItemId,
+    Expression<String>? productNameSnapshot,
+    Expression<double>? quantity,
+    Expression<String>? unit,
+    Expression<String>? specialInstructions,
+    Expression<String>? itemStatus,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<BigInt>? serverVersion,
+    Expression<String>? syncStatus,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (kotId != null) 'kot_id': kotId,
+      if (productId != null) 'product_id': productId,
+      if (orderItemId != null) 'order_item_id': orderItemId,
+      if (productNameSnapshot != null)
+        'product_name_snapshot': productNameSnapshot,
+      if (quantity != null) 'quantity': quantity,
+      if (unit != null) 'unit': unit,
+      if (specialInstructions != null)
+        'special_instructions': specialInstructions,
+      if (itemStatus != null) 'item_status': itemStatus,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (serverVersion != null) 'server_version': serverVersion,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  KotItemsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? kotId,
+    Value<String?>? productId,
+    Value<String?>? orderItemId,
+    Value<String>? productNameSnapshot,
+    Value<double>? quantity,
+    Value<String?>? unit,
+    Value<String?>? specialInstructions,
+    Value<String>? itemStatus,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<BigInt?>? serverVersion,
+    Value<String?>? syncStatus,
+    Value<int>? rowid,
+  }) {
+    return KotItemsCompanion(
+      id: id ?? this.id,
+      kotId: kotId ?? this.kotId,
+      productId: productId ?? this.productId,
+      orderItemId: orderItemId ?? this.orderItemId,
+      productNameSnapshot: productNameSnapshot ?? this.productNameSnapshot,
+      quantity: quantity ?? this.quantity,
+      unit: unit ?? this.unit,
+      specialInstructions: specialInstructions ?? this.specialInstructions,
+      itemStatus: itemStatus ?? this.itemStatus,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      serverVersion: serverVersion ?? this.serverVersion,
+      syncStatus: syncStatus ?? this.syncStatus,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (kotId.present) {
+      map['kot_id'] = Variable<String>(kotId.value);
+    }
+    if (productId.present) {
+      map['product_id'] = Variable<String>(productId.value);
+    }
+    if (orderItemId.present) {
+      map['order_item_id'] = Variable<String>(orderItemId.value);
+    }
+    if (productNameSnapshot.present) {
+      map['product_name_snapshot'] = Variable<String>(
+        productNameSnapshot.value,
+      );
+    }
+    if (quantity.present) {
+      map['quantity'] = Variable<double>(quantity.value);
+    }
+    if (unit.present) {
+      map['unit'] = Variable<String>(unit.value);
+    }
+    if (specialInstructions.present) {
+      map['special_instructions'] = Variable<String>(specialInstructions.value);
+    }
+    if (itemStatus.present) {
+      map['item_status'] = Variable<String>(itemStatus.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<BigInt>(serverVersion.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<String>(syncStatus.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('KotItemsCompanion(')
+          ..write('id: $id, ')
+          ..write('kotId: $kotId, ')
+          ..write('productId: $productId, ')
+          ..write('orderItemId: $orderItemId, ')
+          ..write('productNameSnapshot: $productNameSnapshot, ')
+          ..write('quantity: $quantity, ')
+          ..write('unit: $unit, ')
+          ..write('specialInstructions: $specialInstructions, ')
+          ..write('itemStatus: $itemStatus, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('serverVersion: $serverVersion, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('rowid: $rowid')
@@ -18876,6 +19839,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $UsersTable users = $UsersTable(this);
   late final $DiningTablesTable diningTables = $DiningTablesTable(this);
   late final $KotRecordsTable kotRecords = $KotRecordsTable(this);
+  late final $KotItemsTable kotItems = $KotItemsTable(this);
   late final $SyncCursorsTable syncCursors = $SyncCursorsTable(this);
   late final $SyncQueueTable syncQueue = $SyncQueueTable(this);
   late final $SyncConflictsTable syncConflicts = $SyncConflictsTable(this);
@@ -18904,6 +19868,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     users,
     diningTables,
     kotRecords,
+    kotItems,
     syncCursors,
     syncQueue,
     syncConflicts,
@@ -29390,7 +30355,10 @@ typedef $$DiningTablesTableProcessedTableManager =
 typedef $$KotRecordsTableCreateCompanionBuilder =
     KotRecordsCompanion Function({
       required String id,
-      required String invoiceId,
+      Value<String?> businessId,
+      Value<String?> invoiceId,
+      Value<String?> purchaseInvoiceId,
+      Value<String?> supplierInvoiceNumber,
       required String kotNumber,
       required String orderType,
       Value<String?> tableNumber,
@@ -29404,7 +30372,10 @@ typedef $$KotRecordsTableCreateCompanionBuilder =
 typedef $$KotRecordsTableUpdateCompanionBuilder =
     KotRecordsCompanion Function({
       Value<String> id,
-      Value<String> invoiceId,
+      Value<String?> businessId,
+      Value<String?> invoiceId,
+      Value<String?> purchaseInvoiceId,
+      Value<String?> supplierInvoiceNumber,
       Value<String> kotNumber,
       Value<String> orderType,
       Value<String?> tableNumber,
@@ -29430,8 +30401,23 @@ class $$KotRecordsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get businessId => $composableBuilder(
+    column: $table.businessId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get invoiceId => $composableBuilder(
     column: $table.invoiceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get purchaseInvoiceId => $composableBuilder(
+    column: $table.purchaseInvoiceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get supplierInvoiceNumber => $composableBuilder(
+    column: $table.supplierInvoiceNumber,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -29490,8 +30476,23 @@ class $$KotRecordsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get businessId => $composableBuilder(
+    column: $table.businessId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get invoiceId => $composableBuilder(
     column: $table.invoiceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get purchaseInvoiceId => $composableBuilder(
+    column: $table.purchaseInvoiceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get supplierInvoiceNumber => $composableBuilder(
+    column: $table.supplierInvoiceNumber,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -29548,8 +30549,23 @@ class $$KotRecordsTableAnnotationComposer
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
+  GeneratedColumn<String> get businessId => $composableBuilder(
+    column: $table.businessId,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get invoiceId =>
       $composableBuilder(column: $table.invoiceId, builder: (column) => column);
+
+  GeneratedColumn<String> get purchaseInvoiceId => $composableBuilder(
+    column: $table.purchaseInvoiceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get supplierInvoiceNumber => $composableBuilder(
+    column: $table.supplierInvoiceNumber,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get kotNumber =>
       $composableBuilder(column: $table.kotNumber, builder: (column) => column);
@@ -29616,7 +30632,10 @@ class $$KotRecordsTableTableManager
           updateCompanionCallback:
               ({
                 Value<String> id = const Value.absent(),
-                Value<String> invoiceId = const Value.absent(),
+                Value<String?> businessId = const Value.absent(),
+                Value<String?> invoiceId = const Value.absent(),
+                Value<String?> purchaseInvoiceId = const Value.absent(),
+                Value<String?> supplierInvoiceNumber = const Value.absent(),
                 Value<String> kotNumber = const Value.absent(),
                 Value<String> orderType = const Value.absent(),
                 Value<String?> tableNumber = const Value.absent(),
@@ -29628,7 +30647,10 @@ class $$KotRecordsTableTableManager
                 Value<int> rowid = const Value.absent(),
               }) => KotRecordsCompanion(
                 id: id,
+                businessId: businessId,
                 invoiceId: invoiceId,
+                purchaseInvoiceId: purchaseInvoiceId,
+                supplierInvoiceNumber: supplierInvoiceNumber,
                 kotNumber: kotNumber,
                 orderType: orderType,
                 tableNumber: tableNumber,
@@ -29642,7 +30664,10 @@ class $$KotRecordsTableTableManager
           createCompanionCallback:
               ({
                 required String id,
-                required String invoiceId,
+                Value<String?> businessId = const Value.absent(),
+                Value<String?> invoiceId = const Value.absent(),
+                Value<String?> purchaseInvoiceId = const Value.absent(),
+                Value<String?> supplierInvoiceNumber = const Value.absent(),
                 required String kotNumber,
                 required String orderType,
                 Value<String?> tableNumber = const Value.absent(),
@@ -29654,7 +30679,10 @@ class $$KotRecordsTableTableManager
                 Value<int> rowid = const Value.absent(),
               }) => KotRecordsCompanion.insert(
                 id: id,
+                businessId: businessId,
                 invoiceId: invoiceId,
+                purchaseInvoiceId: purchaseInvoiceId,
+                supplierInvoiceNumber: supplierInvoiceNumber,
                 kotNumber: kotNumber,
                 orderType: orderType,
                 tableNumber: tableNumber,
@@ -29688,6 +30716,370 @@ typedef $$KotRecordsTableProcessedTableManager =
         BaseReferences<_$AppDatabase, $KotRecordsTable, KotRecordEntry>,
       ),
       KotRecordEntry,
+      PrefetchHooks Function()
+    >;
+typedef $$KotItemsTableCreateCompanionBuilder =
+    KotItemsCompanion Function({
+      required String id,
+      required String kotId,
+      Value<String?> productId,
+      Value<String?> orderItemId,
+      required String productNameSnapshot,
+      required double quantity,
+      Value<String?> unit,
+      Value<String?> specialInstructions,
+      Value<String> itemStatus,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<BigInt?> serverVersion,
+      Value<String?> syncStatus,
+      Value<int> rowid,
+    });
+typedef $$KotItemsTableUpdateCompanionBuilder =
+    KotItemsCompanion Function({
+      Value<String> id,
+      Value<String> kotId,
+      Value<String?> productId,
+      Value<String?> orderItemId,
+      Value<String> productNameSnapshot,
+      Value<double> quantity,
+      Value<String?> unit,
+      Value<String?> specialInstructions,
+      Value<String> itemStatus,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<BigInt?> serverVersion,
+      Value<String?> syncStatus,
+      Value<int> rowid,
+    });
+
+class $$KotItemsTableFilterComposer
+    extends Composer<_$AppDatabase, $KotItemsTable> {
+  $$KotItemsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kotId => $composableBuilder(
+    column: $table.kotId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get productId => $composableBuilder(
+    column: $table.productId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get orderItemId => $composableBuilder(
+    column: $table.orderItemId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get productNameSnapshot => $composableBuilder(
+    column: $table.productNameSnapshot,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get quantity => $composableBuilder(
+    column: $table.quantity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get unit => $composableBuilder(
+    column: $table.unit,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get specialInstructions => $composableBuilder(
+    column: $table.specialInstructions,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get itemStatus => $composableBuilder(
+    column: $table.itemStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<BigInt> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$KotItemsTableOrderingComposer
+    extends Composer<_$AppDatabase, $KotItemsTable> {
+  $$KotItemsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kotId => $composableBuilder(
+    column: $table.kotId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get productId => $composableBuilder(
+    column: $table.productId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get orderItemId => $composableBuilder(
+    column: $table.orderItemId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get productNameSnapshot => $composableBuilder(
+    column: $table.productNameSnapshot,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get quantity => $composableBuilder(
+    column: $table.quantity,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get unit => $composableBuilder(
+    column: $table.unit,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get specialInstructions => $composableBuilder(
+    column: $table.specialInstructions,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get itemStatus => $composableBuilder(
+    column: $table.itemStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<BigInt> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$KotItemsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $KotItemsTable> {
+  $$KotItemsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get kotId =>
+      $composableBuilder(column: $table.kotId, builder: (column) => column);
+
+  GeneratedColumn<String> get productId =>
+      $composableBuilder(column: $table.productId, builder: (column) => column);
+
+  GeneratedColumn<String> get orderItemId => $composableBuilder(
+    column: $table.orderItemId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get productNameSnapshot => $composableBuilder(
+    column: $table.productNameSnapshot,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get quantity =>
+      $composableBuilder(column: $table.quantity, builder: (column) => column);
+
+  GeneratedColumn<String> get unit =>
+      $composableBuilder(column: $table.unit, builder: (column) => column);
+
+  GeneratedColumn<String> get specialInstructions => $composableBuilder(
+    column: $table.specialInstructions,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get itemStatus => $composableBuilder(
+    column: $table.itemStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<BigInt> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+}
+
+class $$KotItemsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $KotItemsTable,
+          KotItemEntry,
+          $$KotItemsTableFilterComposer,
+          $$KotItemsTableOrderingComposer,
+          $$KotItemsTableAnnotationComposer,
+          $$KotItemsTableCreateCompanionBuilder,
+          $$KotItemsTableUpdateCompanionBuilder,
+          (
+            KotItemEntry,
+            BaseReferences<_$AppDatabase, $KotItemsTable, KotItemEntry>,
+          ),
+          KotItemEntry,
+          PrefetchHooks Function()
+        > {
+  $$KotItemsTableTableManager(_$AppDatabase db, $KotItemsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$KotItemsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$KotItemsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$KotItemsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> kotId = const Value.absent(),
+                Value<String?> productId = const Value.absent(),
+                Value<String?> orderItemId = const Value.absent(),
+                Value<String> productNameSnapshot = const Value.absent(),
+                Value<double> quantity = const Value.absent(),
+                Value<String?> unit = const Value.absent(),
+                Value<String?> specialInstructions = const Value.absent(),
+                Value<String> itemStatus = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<BigInt?> serverVersion = const Value.absent(),
+                Value<String?> syncStatus = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => KotItemsCompanion(
+                id: id,
+                kotId: kotId,
+                productId: productId,
+                orderItemId: orderItemId,
+                productNameSnapshot: productNameSnapshot,
+                quantity: quantity,
+                unit: unit,
+                specialInstructions: specialInstructions,
+                itemStatus: itemStatus,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                serverVersion: serverVersion,
+                syncStatus: syncStatus,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String kotId,
+                Value<String?> productId = const Value.absent(),
+                Value<String?> orderItemId = const Value.absent(),
+                required String productNameSnapshot,
+                required double quantity,
+                Value<String?> unit = const Value.absent(),
+                Value<String?> specialInstructions = const Value.absent(),
+                Value<String> itemStatus = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<BigInt?> serverVersion = const Value.absent(),
+                Value<String?> syncStatus = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => KotItemsCompanion.insert(
+                id: id,
+                kotId: kotId,
+                productId: productId,
+                orderItemId: orderItemId,
+                productNameSnapshot: productNameSnapshot,
+                quantity: quantity,
+                unit: unit,
+                specialInstructions: specialInstructions,
+                itemStatus: itemStatus,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                serverVersion: serverVersion,
+                syncStatus: syncStatus,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$KotItemsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $KotItemsTable,
+      KotItemEntry,
+      $$KotItemsTableFilterComposer,
+      $$KotItemsTableOrderingComposer,
+      $$KotItemsTableAnnotationComposer,
+      $$KotItemsTableCreateCompanionBuilder,
+      $$KotItemsTableUpdateCompanionBuilder,
+      (
+        KotItemEntry,
+        BaseReferences<_$AppDatabase, $KotItemsTable, KotItemEntry>,
+      ),
+      KotItemEntry,
       PrefetchHooks Function()
     >;
 typedef $$SyncCursorsTableCreateCompanionBuilder =
@@ -30556,6 +31948,8 @@ class $AppDatabaseManager {
       $$DiningTablesTableTableManager(_db, _db.diningTables);
   $$KotRecordsTableTableManager get kotRecords =>
       $$KotRecordsTableTableManager(_db, _db.kotRecords);
+  $$KotItemsTableTableManager get kotItems =>
+      $$KotItemsTableTableManager(_db, _db.kotItems);
   $$SyncCursorsTableTableManager get syncCursors =>
       $$SyncCursorsTableTableManager(_db, _db.syncCursors);
   $$SyncQueueTableTableManager get syncQueue =>

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -19,6 +20,12 @@ int _parseInt(dynamic val, [int fallback = 0]) {
   if (val is int) return val;
   if (val is num) return val.toInt();
   return int.tryParse(val.toString()) ?? fallback;
+}
+
+class KotWithItems {
+  final KotRecordEntry record;
+  final List<KotItemEntry> items;
+  const KotWithItems({required this.record, required this.items});
 }
 
 class PurchaseRepository {
@@ -395,6 +402,26 @@ class PurchaseRepository {
     return query.watch();
   }
 
+  Future<List<SupplierPaymentEntry>> getSupplierPayments({
+    String? supplierId,
+    String? purchaseInvoiceId,
+  }) {
+    final query = _db.select(_db.supplierPayments);
+
+    if (supplierId != null && supplierId.isNotEmpty) {
+      query.where((p) => p.supplierId.equals(supplierId));
+    }
+    if (purchaseInvoiceId != null && purchaseInvoiceId.isNotEmpty) {
+      query.where((p) => p.purchaseInvoiceId.equals(purchaseInvoiceId));
+    }
+
+    query.orderBy([
+      (p) => OrderingTerm(expression: p.paymentDate, mode: OrderingMode.desc),
+    ]);
+
+    return query.get();
+  }
+
   Future<void> recordSupplierPayment({
     required String purchaseInvoiceId,
     required String supplierId,
@@ -419,7 +446,13 @@ class PurchaseRepository {
 
     final api = _api;
     if (api != null && api.authToken != null) {
-      await api.post('/admin/purchase-invoices/$purchaseInvoiceId/payments', body: payload);
+      try {
+        await api.post('/admin/purchase-invoices/$purchaseInvoiceId/payments', body: payload);
+      } catch (e) {
+        try {
+          await api.post('/supplier/invoices/$purchaseInvoiceId/payments', body: payload);
+        } catch (_) {}
+      }
     }
 
     await _db.into(_db.supplierPayments).insert(
@@ -703,6 +736,179 @@ class PurchaseRepository {
         );
       }
     } catch (_) {}
+  }
+
+  Future<void> completePurchaseInvoice(String invoiceId) async {
+    final inv = await getPurchaseInvoiceById(invoiceId);
+    if (inv == null) {
+      throw Exception('Purchase invoice not found.');
+    }
+    if (inv.balanceDuePaise > 0) {
+      throw Exception('Cannot complete invoice: Balance due must be ₹0.00.');
+    }
+
+    final payments = await getSupplierPayments(purchaseInvoiceId: invoiceId);
+    if (inv.grandTotalPaise > 0 && payments.isEmpty) {
+      throw Exception('Cannot complete invoice: At least one disbursement payment must be recorded.');
+    }
+
+    final now = DateTime.now();
+    final api = _api;
+    if (api != null && api.authToken != null) {
+      try {
+        await api.post('/admin/purchase-invoices/$invoiceId/complete');
+      } catch (e) {
+        try {
+          await api.post('/supplier/invoices/$invoiceId/complete');
+        } catch (_) {}
+      }
+    }
+
+    await (_db.update(_db.purchaseInvoices)..where((p) => p.id.equals(invoiceId))).write(
+      PurchaseInvoicesCompanion(
+        verificationStatus: const Value('COMPLETED'),
+        paymentStatus: const Value('PAID'),
+        updatedAt: Value(now),
+      ),
+    );
+  }
+
+  Future<KotWithItems> getOrSavePurchaseKot({
+    required PurchaseInvoiceEntry invoice,
+    required List<PurchaseInvoiceItemEntry> items,
+  }) async {
+    // 1. Check if a KOT record already exists for this purchase invoice
+    final existing = await (_db.select(_db.kotRecords)
+          ..where((k) => k.purchaseInvoiceId.equals(invoice.id)))
+        .getSingleOrNull();
+
+    if (existing != null) {
+      // Increment reprint count
+      final updatedReprint = existing.reprintCount + 1;
+      await (_db.update(_db.kotRecords)..where((k) => k.id.equals(existing.id))).write(
+        KotRecordsCompanion(
+          reprintCount: Value(updatedReprint),
+        ),
+      );
+
+      final api = _api;
+      if (api != null && api.authToken != null) {
+        try {
+          await api.post('/kot/${existing.id}/reprint');
+        } catch (_) {}
+      }
+
+      final kotItems = await (_db.select(_db.kotItems)
+            ..where((ki) => ki.kotId.equals(existing.id)))
+          .get();
+      final updatedRecord = existing.copyWith(reprintCount: updatedReprint);
+      return KotWithItems(record: updatedRecord, items: kotItems);
+    }
+
+    // 2. Generate a new permanent KOT record and all line items
+    final bizId = await _resolveBusinessId() ?? invoice.businessId;
+    final kotId = _uuid.v4();
+    final now = DateTime.now();
+    final allKotsCount = await _db.select(_db.kotRecords).get().then((list) => list.length);
+    final kotNumber = 'KOT-${(allKotsCount + 1).toString().padLeft(4, '0')}';
+
+    final itemsJsonList = items.map((it) => {
+      'id': it.id,
+      'productName': it.productName,
+      'quantity': it.quantity,
+      'unit': it.unit,
+    }).toList();
+
+    // Atomic transaction: Insert into kot_records AND all kot_items
+    await _db.transaction(() async {
+      await _db.into(_db.kotRecords).insert(
+        KotRecordsCompanion.insert(
+          id: kotId,
+          businessId: Value(bizId),
+          purchaseInvoiceId: Value(invoice.id),
+          supplierInvoiceNumber: Value(invoice.invoiceNumber),
+          kotNumber: kotNumber,
+          orderType: 'Procurement',
+          itemsJson: jsonEncode(itemsJsonList),
+          reprintCount: const Value(0),
+          createdAt: now,
+          syncStatus: const Value('synced'),
+        ),
+      );
+
+      for (final it in items) {
+        final itemId = _uuid.v4();
+        await _db.into(_db.kotItems).insert(
+          KotItemsCompanion.insert(
+            id: itemId,
+            kotId: kotId,
+            productId: Value(it.productId),
+            productNameSnapshot: it.productName,
+            quantity: it.quantity,
+            unit: Value(it.unit),
+            specialInstructions: const Value(null),
+            itemStatus: const Value('PENDING'),
+            createdAt: now,
+            updatedAt: now,
+            syncStatus: const Value('synced'),
+          ),
+        );
+      }
+    });
+
+    // Also persist via backend API
+    final api = _api;
+    if (api != null && api.authToken != null) {
+      try {
+        await api.post('/kot', body: {
+          'id': kotId,
+          'purchaseInvoiceId': invoice.id,
+          'supplierInvoiceNumber': invoice.invoiceNumber,
+          'kotNumber': kotNumber,
+          'orderType': 'Procurement',
+          'items': items.map((it) => {
+            'productId': it.productId,
+            'productName': it.productName,
+            'quantity': it.quantity,
+            'unit': it.unit,
+          }).toList(),
+        });
+      } catch (_) {}
+    }
+
+    final savedRecord = await (_db.select(_db.kotRecords)..where((k) => k.id.equals(kotId))).getSingle();
+    final savedItems = await (_db.select(_db.kotItems)..where((ki) => ki.kotId.equals(kotId))).get();
+
+    return KotWithItems(record: savedRecord, items: savedItems);
+  }
+
+  Stream<List<KotWithItems>> watchKotsForPurchaseInvoice(String purchaseInvoiceId) {
+    return (_db.select(_db.kotRecords)
+          ..where((k) => k.purchaseInvoiceId.equals(purchaseInvoiceId))
+          ..orderBy([(k) => OrderingTerm.desc(k.createdAt)]))
+        .watch()
+        .asyncMap((records) async {
+      final list = <KotWithItems>[];
+      for (final r in records) {
+        final items = await (_db.select(_db.kotItems)..where((ki) => ki.kotId.equals(r.id))).get();
+        list.add(KotWithItems(record: r, items: items));
+      }
+      return list;
+    });
+  }
+
+  Future<List<KotWithItems>> getKotsForPurchaseInvoice(String purchaseInvoiceId) async {
+    final records = await (_db.select(_db.kotRecords)
+          ..where((k) => k.purchaseInvoiceId.equals(purchaseInvoiceId))
+          ..orderBy([(k) => OrderingTerm.desc(k.createdAt)]))
+        .get();
+
+    final list = <KotWithItems>[];
+    for (final r in records) {
+      final items = await (_db.select(_db.kotItems)..where((ki) => ki.kotId.equals(r.id))).get();
+      list.add(KotWithItems(record: r, items: items));
+    }
+    return list;
   }
 }
 

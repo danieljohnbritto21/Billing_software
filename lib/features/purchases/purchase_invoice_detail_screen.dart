@@ -24,12 +24,13 @@ class _PurchaseInvoiceDetailScreenState extends ConsumerState<PurchaseInvoiceDet
 
   Color _getVerificationColor(String status) {
     switch (status.toUpperCase()) {
-      case 'SUBMITTED':
-        return Colors.blue.shade700;
-      case 'PENDING_VERIFICATION':
-        return Colors.blue.shade700;
+      case 'COMPLETED':
+        return Colors.green.shade800;
       case 'APPROVED':
         return Colors.green.shade700;
+      case 'SUBMITTED':
+      case 'PENDING_VERIFICATION':
+        return Colors.blue.shade700;
       case 'REJECTED':
         return Colors.red.shade700;
       default:
@@ -73,11 +74,20 @@ class _PurchaseInvoiceDetailScreenState extends ConsumerState<PurchaseInvoiceDet
   Future<void> _printKot(PurchaseInvoiceEntry inv, List<PurchaseInvoiceItemEntry> items) async {
     try {
       final settings = await ref.read(settingsRepositoryProvider).getAllSettings();
+      final kotWithItems = await ref.read(purchaseRepositoryProvider).getOrSavePurchaseKot(
+            invoice: inv,
+            items: items,
+          );
       await InvoicePdfGenerator.printPurchaseKot(
         invoice: inv,
         items: items,
         settings: settings,
+        kotNumber: kotWithItems.record.kotNumber,
+        reprintCount: kotWithItems.record.reprintCount,
       );
+      if (mounted) {
+        setState(() {});
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -723,46 +733,281 @@ class _PurchaseInvoiceDetailScreenState extends ConsumerState<PurchaseInvoiceDet
               ),
               const SizedBox(height: 24),
 
-              // Action Buttons for Admin
-              if (inv.balanceDuePaise > 0 && inv.verificationStatus != 'REJECTED' && inv.verificationStatus != 'CANCELLED') ...[
+              // Associated KOT Details Section
+              const SizedBox(height: 16),
+              Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.restaurant_menu, color: Colors.deepOrange, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Associated KOT Details',
+                                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.print, size: 16, color: Colors.deepOrange),
+                            label: const Text('Print KOT', style: TextStyle(color: Colors.deepOrange, fontSize: 12)),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Colors.deepOrange),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            ),
+                            onPressed: () => _printKot(inv, items),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      StreamBuilder<List<KotWithItems>>(
+                        stream: purchaseRepo.watchKotsForPurchaseInvoice(inv.id),
+                        builder: (context, kotSnap) {
+                          final kots = kotSnap.data ?? [];
+                          if (kots.isEmpty) {
+                            return Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade50.withValues(alpha: 0.4),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.orange.shade200),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.receipt_long_outlined, size: 36, color: Colors.orange.shade400),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'No KOT records found for this invoice.',
+                                    style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w500),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  FilledButton.icon(
+                                    icon: const Icon(Icons.add, size: 16),
+                                    label: const Text('Generate & Save KOT'),
+                                    style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange.shade700),
+                                    onPressed: () => _printKot(inv, items),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          return Column(
+                            children: kots.map((k) {
+                              final kotRec = k.record;
+                              final kotItems = k.items;
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.grey.shade300),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          kotRec.kotNumber,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15,
+                                            color: Colors.deepOrange,
+                                          ),
+                                        ),
+                                        if (kotRec.reprintCount > 0)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.amber.shade100,
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: Text(
+                                              'Reprinted x${kotRec.reprintCount}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.amber.shade900,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Supplier Bill Ref: ${kotRec.supplierInvoiceNumber ?? inv.invoiceNumber}',
+                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                                        ),
+                                        Text(
+                                          _dateFormat.format(kotRec.createdAt),
+                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                        ),
+                                      ],
+                                    ),
+                                    const Divider(height: 16),
+                                    ...kotItems.map((ki) => Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 3),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  ki.productNameSnapshot,
+                                                  style: const TextStyle(fontWeight: FontWeight.w500),
+                                                ),
+                                              ),
+                                              Text(
+                                                '${ki.quantity} ${ki.unit ?? ''}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blue.shade50,
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  ki.itemStatus,
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: Colors.blue.shade800,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        )),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Action Buttons for Admin (Complete, Verify, Reject, Pay)
+              const SizedBox(height: 24),
+              if (inv.verificationStatus != 'COMPLETED') ...[
                 Row(
                   children: [
-                    if (inv.verificationStatus == 'SUBMITTED' || inv.verificationStatus == 'PENDING_VERIFICATION') ...[
-                      OutlinedButton.icon(
-                        onPressed: _isActionLoading ? null : _rejectInvoice,
-                        icon: const Icon(Icons.close, color: Colors.red),
-                        label: const Text('Reject', style: TextStyle(color: Colors.red)),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.red),
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    if (inv.balanceDuePaise <= 0)
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _isActionLoading
+                              ? null
+                              : () async {
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Complete Purchase Invoice?'),
+                                      content: Text(
+                                        'Mark invoice ${inv.invoiceNumber} as COMPLETED?\n\n'
+                                        'This finalizes the invoice. All items and cash disbursements are settled.',
+                                      ),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                        FilledButton(
+                                          onPressed: () => Navigator.pop(ctx, true),
+                                          style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
+                                          child: const Text('Complete'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+
+                                  if (confirmed != true) return;
+
+                                  setState(() => _isActionLoading = true);
+                                  try {
+                                    await ref.read(purchaseRepositoryProvider).completePurchaseInvoice(inv.id);
+                                    if (mounted) {
+                                      messenger.showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Purchase invoice marked as COMPLETED!'),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                      setState(() {});
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      messenger.showSnackBar(
+                                        SnackBar(content: Text('Completion failed: $e'), backgroundColor: Colors.red),
+                                      );
+                                    }
+                                  } finally {
+                                    if (mounted) setState(() => _isActionLoading = false);
+                                  }
+                                },
+                          icon: const Icon(Icons.check_circle_outline),
+                          label: const Text('Complete Invoice', style: TextStyle(fontSize: 15)),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.blue.shade800,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      )
+                    else ...[
+                      if (inv.verificationStatus == 'SUBMITTED' || inv.verificationStatus == 'PENDING_VERIFICATION') ...[
+                        OutlinedButton.icon(
+                          onPressed: _isActionLoading ? null : _rejectInvoice,
+                          icon: const Icon(Icons.close, color: Colors.red),
+                          label: const Text('Reject', style: TextStyle(color: Colors.red)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.red),
+                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: _isActionLoading ? null : _approveInvoice,
+                          icon: const Icon(Icons.check, color: Colors.green),
+                          label: const Text('Verify', style: TextStyle(color: Colors.green)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.green),
+                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () => context.push('/purchases/invoices/${inv.id}/pay'),
+                          icon: const Icon(Icons.payment),
+                          label: const Text('Record Payment Voucher', style: TextStyle(fontSize: 15)),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primary,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _isActionLoading ? null : _approveInvoice,
-                        icon: const Icon(Icons.check, color: Colors.green),
-                        label: const Text('Verify', style: TextStyle(color: Colors.green)),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.green),
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
                     ],
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () => context.push('/purchases/invoices/${inv.id}/pay'),
-                        icon: const Icon(Icons.payment),
-                        label: const Text('Record Payment Voucher', style: TextStyle(fontSize: 15)),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: theme.colorScheme.primary,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ],

@@ -458,6 +458,62 @@ export class PurchasesService {
     });
   }
 
+  async completePurchaseInvoice(businessId: string, id: string, supplierId?: string) {
+    const invoice = await prisma.purchase_invoices.findFirst({
+      where: {
+        id,
+        business_id: businessId,
+        ...(supplierId ? { supplier_id: supplierId } : {}),
+        deleted_at: null,
+      },
+      include: {
+        supplier_payments: true,
+      },
+    });
+
+    if (!invoice) {
+      throw new AppError(404, 'Purchase invoice not found.');
+    }
+
+    if (invoice.invoice_status === 'COMPLETED') {
+      throw new AppError(400, 'Invoice is already marked as COMPLETED.');
+    }
+
+    if (invoice.invoice_status === 'REJECTED' || invoice.invoice_status === 'CANCELLED') {
+      throw new AppError(400, `Cannot complete invoice in '${invoice.invoice_status}' status.`);
+    }
+
+    const balanceDue = BigInt(invoice.balance_due_paise);
+    if (balanceDue > 0n) {
+      throw new AppError(
+        400,
+        `Cannot complete invoice with outstanding balance (${balanceDue} paise). Balance must be zero.`
+      );
+    }
+
+    const grandTotal = BigInt(invoice.grand_total_paise);
+    if (grandTotal > 0n && (!invoice.supplier_payments || invoice.supplier_payments.length === 0)) {
+      throw new AppError(
+        400,
+        'Cannot complete invoice: At least one disbursement payment must be recorded.'
+      );
+    }
+
+    return await prisma.purchase_invoices.update({
+      where: { id: invoice.id },
+      data: {
+        invoice_status: 'COMPLETED',
+        payment_status: 'PAID',
+        updated_at: new Date(),
+      },
+      include: {
+        purchase_invoice_items: true,
+        supplier_payments: true,
+        suppliers: true,
+      },
+    });
+  }
+
   // ==========================================
   // 3. SUPPLIER PAYMENTS (STRICT SEPARATION)
   // ==========================================

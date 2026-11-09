@@ -30,6 +30,7 @@ part 'app_database.g.dart';
   Users,
   DiningTables,
   KotRecords,
+  KotItems,
   SyncCursors,
   SyncQueue,
   SyncConflicts,
@@ -39,7 +40,7 @@ class AppDatabase extends _$AppDatabase {
       : super(e ?? openConnection());
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   /// Creates a backup file of the SQLite database before running migrations
   static Future<void> backupDatabaseBeforeMigration() async {
@@ -134,6 +135,17 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(products, products.supplierId);
             await m.addColumn(invoices, invoices.orderId);
             await m.addColumn(users, users.supplierId);
+          }
+          if (from < 8) {
+            await backupDatabaseBeforeMigration();
+
+            // 1. Create new kotItems table
+            await m.createTable(kotItems);
+
+            // 2. Add columns to kotRecords
+            await m.addColumn(kotRecords, kotRecords.businessId);
+            await m.addColumn(kotRecords, kotRecords.purchaseInvoiceId);
+            await m.addColumn(kotRecords, kotRecords.supplierInvoiceNumber);
           }
         },
         beforeOpen: (details) async {

@@ -1004,6 +1004,8 @@ class InvoicePdfGenerator {
     required List<PurchaseInvoiceItemEntry> items,
     required Map<String, String> settings,
     ReceiptFormat? format,
+    String? kotNumber,
+    int? reprintCount,
   }) async {
     final effectiveFormat = resolveFormat(settings, format);
     final theme = await _loadTheme();
@@ -1015,7 +1017,8 @@ class InvoicePdfGenerator {
     final dateFormat = DateFormat('dd-MM-yyyy hh:mm a');
     final formattedDate = dateFormat.format(invoice.createdAt);
 
-    final kotNumber = 'KOT-${invoice.invoiceNumber.replaceAll(RegExp(r'[^0-9]'), '').padLeft(6, '0')}';
+    final resolvedKotNumber = kotNumber ??
+        'KOT-${invoice.invoiceNumber.replaceAll(RegExp(r'[^0-9]'), '').padLeft(6, '0')}';
 
     final is58mm = effectiveFormat == ReceiptFormat.thermal58mm;
     final pageFormat = is58mm
@@ -1030,9 +1033,10 @@ class InvoicePdfGenerator {
             invoice: invoice,
             items: items,
             businessName: businessName,
-            kotNumber: kotNumber,
+            kotNumber: resolvedKotNumber,
             formattedDate: formattedDate,
             is58mm: is58mm,
+            reprintCount: reprintCount ?? 0,
           );
         },
       ),
@@ -1047,6 +1051,8 @@ class InvoicePdfGenerator {
     required List<PurchaseInvoiceItemEntry> items,
     required Map<String, String> settings,
     ReceiptFormat? format,
+    String? kotNumber,
+    int? reprintCount,
   }) async {
     final effectiveFormat = resolveFormat(settings, format);
     final pdfBytes = await generatePurchaseKot(
@@ -1054,10 +1060,12 @@ class InvoicePdfGenerator {
       items: items,
       settings: settings,
       format: effectiveFormat,
+      kotNumber: kotNumber,
+      reprintCount: reprintCount,
     );
     await Printing.layoutPdf(
       onLayout: (pageFormat) async => pdfBytes,
-      name: 'KOT_${invoice.invoiceNumber}.pdf',
+      name: '${kotNumber ?? 'KOT'}_${invoice.invoiceNumber}.pdf',
     );
   }
 
@@ -1126,6 +1134,7 @@ class InvoicePdfGenerator {
     required String kotNumber,
     required String formattedDate,
     required bool is58mm,
+    int reprintCount = 0,
   }) {
     final titleSize = is58mm ? 12.0 : 15.0;
     final headerSize = is58mm ? 9.5 : 11.5;
@@ -1148,6 +1157,14 @@ class InvoicePdfGenerator {
           textAlign: pw.TextAlign.center,
           style: pw.TextStyle(fontSize: headerSize, fontWeight: pw.FontWeight.bold),
         ),
+        if (reprintCount > 0) ...[
+          pw.SizedBox(height: 2),
+          pw.Text(
+            '*** DUPLICATE / REPRINT #$reprintCount ***',
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(fontSize: smallSize, fontWeight: pw.FontWeight.bold),
+          ),
+        ],
         pw.SizedBox(height: 4),
         pw.Divider(thickness: 0.5, borderStyle: pw.BorderStyle.dashed, color: PdfColors.black),
         pw.SizedBox(height: 2),

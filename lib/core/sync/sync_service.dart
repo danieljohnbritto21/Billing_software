@@ -712,13 +712,38 @@ class SyncService extends ChangeNotifier {
           await _db.into(_db.kotRecords).insertOnConflictUpdate(
             KotRecordsCompanion.insert(
               id: recordId,
-              invoiceId: d['invoice_id'] ?? d['invoiceId'] ?? '',
+              businessId: drift.Value(d['business_id'] ?? d['businessId']),
+              invoiceId: drift.Value(d['invoice_id'] ?? d['invoiceId']),
+              purchaseInvoiceId: drift.Value(d['purchase_invoice_id'] ?? d['purchaseInvoiceId']),
+              supplierInvoiceNumber: drift.Value(d['supplier_invoice_number'] ?? d['supplierInvoiceNumber']),
               kotNumber: d['kot_number'] ?? d['kotNumber'] ?? 'KOT-01',
               orderType: d['order_type'] ?? d['orderType'] ?? 'Dine In',
               tableNumber: drift.Value(d['table_number'] ?? d['tableNumber']),
-              itemsJson: d['items_json'] ?? d['itemsJson'] ?? '[]',
+              itemsJson: d['items_json'] is String ? d['items_json'] : jsonEncode(d['items_json'] ?? []),
               reprintCount: drift.Value(d['reprint_count'] ?? d['reprintCount'] ?? 0),
               createdAt: d['created_at'] != null ? DateTime.parse(d['created_at']) : DateTime.now(),
+              serverVersion: drift.Value(version),
+              syncStatus: const drift.Value('synced'),
+            ),
+          );
+        }
+        break;
+
+      case 'kot_items':
+        if (!isDelete && d != null) {
+          await _db.into(_db.kotItems).insertOnConflictUpdate(
+            KotItemsCompanion.insert(
+              id: recordId,
+              kotId: d['kot_id'] ?? d['kotId'] ?? '',
+              productId: drift.Value(d['product_id'] ?? d['productId']),
+              orderItemId: drift.Value(d['order_item_id'] ?? d['orderItemId']),
+              productNameSnapshot: d['product_name_snapshot'] ?? d['productNameSnapshot'] ?? '',
+              quantity: (d['quantity'] as num?)?.toDouble() ?? 1.0,
+              unit: drift.Value(d['unit'] ?? 'unit'),
+              specialInstructions: drift.Value(d['special_instructions'] ?? d['specialInstructions']),
+              itemStatus: drift.Value(d['item_status'] ?? d['itemStatus'] ?? 'PENDING'),
+              createdAt: d['created_at'] != null ? DateTime.parse(d['created_at']) : DateTime.now(),
+              updatedAt: d['updated_at'] != null ? DateTime.parse(d['updated_at']) : DateTime.now(),
               serverVersion: drift.Value(version),
               syncStatus: const drift.Value('synced'),
             ),

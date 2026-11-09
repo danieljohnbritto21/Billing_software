@@ -328,16 +328,12 @@ test('=== FOODBILL PRO SUPPLIER INVOICE CONTRACT & PRODUCT PRICE TESTS ===', asy
     });
 
     await t3.test('3.5 Direct payment disbursement on SUBMITTED invoice without approval gate', async () => {
-      let pm = await prisma.payment_methods.findFirst({
-        where: { business_id: businessId, is_active: true },
-      });
+      let pm = await prisma.payment_methods.findFirst();
       if (!pm) {
         pm = await prisma.payment_methods.create({
           data: {
-            business_id: businessId,
-            name: 'Cash',
-            type: 'CASH',
-            is_active: true,
+            id: 'Cash',
+            description: 'Cash Currency Settlement',
           },
         });
       }

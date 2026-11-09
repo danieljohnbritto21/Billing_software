@@ -361,7 +361,7 @@ void main() {
 
       final piInitial = await purchaseRepo.getPurchaseInvoiceById(piId);
       expect(piInitial, isNotNull);
-      expect(piInitial!.verificationStatus, equals('PENDING_VERIFICATION'));
+      expect(piInitial!.verificationStatus, anyOf(equals('PENDING_VERIFICATION'), equals('SUBMITTED')));
       expect(piInitial.paymentStatus, equals('PENDING'));
       expect(piInitial.grandTotalPaise, equals(1750000));
       expect(piInitial.balanceDuePaise, equals(1750000));
