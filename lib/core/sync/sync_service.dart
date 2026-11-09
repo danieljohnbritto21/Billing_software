@@ -625,6 +625,7 @@ class SyncService extends ChangeNotifier {
           await _db.into(_db.invoices).insertOnConflictUpdate(
             InvoicesCompanion.insert(
               id: recordId,
+              orderId: drift.Value(d['order_id'] ?? d['orderId']),
               invoiceNumber: d['invoice_number'] ?? d['invoiceNumber'] ?? 'INV-UNKNOWN',
               createdAt: d['created_at'] != null ? DateTime.parse(d['created_at']) : DateTime.now(),
               customerName: drift.Value(d['customer_name'] ?? d['customerName']),

@@ -5,6 +5,7 @@ import {
   CreateOrderInput,
   UpdateOrderInput,
   RecordOrderPaymentInput,
+  AddOrderItemsInput,
 } from './orders.schema';
 
 export class OrdersService {
@@ -323,6 +324,194 @@ export class OrdersService {
         order,
         items: preparedItems,
         invoice: createdInvoice,
+        transactionId: (order as any).transaction_id || order.id,
+      };
+    });
+  }
+
+  async addOrderItems(businessId: string, orderId: string, data: AddOrderItemsInput) {
+    const order = await this.getOrderById(businessId, orderId);
+    if (order.order_status === 'Completed' || order.order_status === 'Cancelled') {
+      throw new AppError(400, `Cannot add items to an order in '${order.order_status}' status.`);
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      let additionalSubtotalPaise = 0n;
+      let additionalItemDiscountPaise = 0n;
+      let additionalTaxableAmountPaise = 0n;
+      let additionalTaxPaise = 0n;
+
+      const preparedItems: any[] = [];
+
+      for (const item of data.items) {
+        let supplierId: string | null = null;
+        if (item.productId) {
+          const product = await tx.products.findFirst({
+            where: { id: item.productId, business_id: businessId },
+          });
+          if (product) {
+            supplierId = product.supplier_id;
+          }
+        }
+
+        const quantityInt = Math.round(item.quantity * 1000);
+        const unitPriceBig = BigInt(item.unitPricePaise);
+        const itemDiscountBig = BigInt(item.discountPaise ?? 0);
+
+        const lineGrossPaise = (BigInt(quantityInt) * unitPriceBig) / 1000n;
+        const lineTaxablePaise = lineGrossPaise > itemDiscountBig ? lineGrossPaise - itemDiscountBig : 0n;
+        const gstRateInt = Math.round(item.gstRatePercent * 100);
+        const lineTaxPaise = (lineTaxablePaise * BigInt(gstRateInt)) / 10000n;
+        const lineTotalPaise = lineTaxablePaise + lineTaxPaise;
+
+        additionalSubtotalPaise += lineGrossPaise;
+        additionalItemDiscountPaise += itemDiscountBig;
+        additionalTaxableAmountPaise += lineTaxablePaise;
+        additionalTaxPaise += lineTaxPaise;
+
+        const newOrderItemId = item.id || randomUUID();
+        const createdOrderItem = await tx.order_items.create({
+          data: {
+            id: newOrderItemId,
+            business_id: businessId,
+            order_id: orderId,
+            product_id: item.productId || null,
+            supplier_id: supplierId,
+            product_name_snapshot: item.productName,
+            product_code_snapshot: item.productCode || null,
+            quantity: item.quantity,
+            unit: item.unit ?? 'plate',
+            unit_price_paise: unitPriceBig,
+            discount_paise: itemDiscountBig,
+            gst_percentage_snapshot: item.gstRatePercent ?? 0,
+            taxable_amount_paise: lineTaxablePaise,
+            tax_amount_paise: lineTaxPaise,
+            total_amount_paise: lineTotalPaise,
+            special_instructions: item.specialInstructions || null,
+          },
+        });
+
+        preparedItems.push({
+          ...createdOrderItem,
+          productName: item.productName,
+          quantity: item.quantity,
+          specialInstructions: item.specialInstructions || null,
+        });
+      }
+
+      const newSubtotalPaise = BigInt(order.subtotal_paise) + additionalSubtotalPaise;
+      const newItemDiscountPaise = BigInt(order.item_discount_paise) + additionalItemDiscountPaise;
+      const newTaxableAmountPaise = BigInt(order.taxable_amount_paise) + additionalTaxableAmountPaise;
+      const newTotalTaxPaise = BigInt(order.total_tax_paise) + additionalTaxPaise;
+      const billDiscountBig = BigInt(order.bill_discount_paise);
+      const newGrandTotalPaise =
+        newTaxableAmountPaise + newTotalTaxPaise > billDiscountBig
+          ? newTaxableAmountPaise + newTotalTaxPaise - billDiscountBig
+          : 0n;
+      const currentPaidBig = BigInt(order.amount_paid_paise);
+      const newBalanceDueBig = newGrandTotalPaise > currentPaidBig ? newGrandTotalPaise - currentPaidBig : 0n;
+      const newPaymentStatus =
+        currentPaidBig >= newGrandTotalPaise && newGrandTotalPaise > 0n
+          ? 'Paid'
+          : currentPaidBig > 0n
+          ? 'Partially Paid'
+          : 'Pending';
+
+      const updatedOrder = await tx.orders.update({
+        where: { id: orderId },
+        data: {
+          subtotal_paise: newSubtotalPaise,
+          item_discount_paise: newItemDiscountPaise,
+          taxable_amount_paise: newTaxableAmountPaise,
+          total_tax_paise: newTotalTaxPaise,
+          cgst_paise: newTotalTaxPaise / 2n,
+          sgst_paise: newTotalTaxPaise / 2n,
+          grand_total_paise: newGrandTotalPaise,
+          balance_due_paise: newBalanceDueBig,
+          payment_status: newPaymentStatus,
+        },
+      });
+
+      // If an invoice exists, update it and create matching invoice items
+      let existingInvoice = await tx.invoices.findFirst({
+        where: { order_id: orderId, business_id: businessId },
+      });
+
+      if (existingInvoice) {
+        for (const it of preparedItems) {
+          await tx.invoice_items.create({
+            data: {
+              id: randomUUID(),
+              invoice_id: existingInvoice.id,
+              order_item_id: it.id,
+              product_id: it.product_id,
+              product_name: it.product_name_snapshot,
+              product_code: it.product_code_snapshot,
+              unit: it.unit,
+              unit_price_paise: it.unit_price_paise,
+              quantity: it.quantity,
+              discount_paise: it.discount_paise,
+              gst_rate_percent: Number(it.gst_percentage_snapshot),
+              is_tax_inclusive: true,
+              taxable_amount_paise: it.taxable_amount_paise,
+              tax_amount_paise: it.tax_amount_paise,
+              total_amount_paise: it.total_amount_paise,
+            },
+          });
+        }
+
+        existingInvoice = await tx.invoices.update({
+          where: { id: existingInvoice.id },
+          data: {
+            subtotal_paise: newSubtotalPaise,
+            item_discount_total_paise: newItemDiscountPaise,
+            taxable_amount_paise: newTaxableAmountPaise,
+            cgst_paise: newTotalTaxPaise / 2n,
+            sgst_paise: newTotalTaxPaise / 2n,
+            grand_total_paise: newGrandTotalPaise,
+            payment_status: newPaymentStatus,
+          },
+        });
+      }
+
+      // Generate incremental KOT for newly added items
+      let generatedKot = null;
+      if (data.generateKot !== false) {
+        const totalKotCount = await tx.kot_records.count({
+          where: {
+            OR: [
+              ...(existingInvoice ? [{ invoice_id: existingInvoice.id }] : []),
+              { order_id: orderId },
+            ],
+          },
+        });
+
+        const kotNumber = `KOT-${String(totalKotCount + 1).padStart(4, '0')}`;
+
+        generatedKot = await tx.kot_records.create({
+          data: {
+            id: randomUUID(),
+            order_id: orderId,
+            invoice_id: existingInvoice?.id || null,
+            kot_number: kotNumber,
+            table_number: order.dining_table_id ? 'Table' : null,
+            order_type: order.order_type,
+            items_json: preparedItems.map((p) => ({
+              orderItemId: p.id,
+              productName: p.product_name_snapshot,
+              quantity: Number(p.quantity),
+              notes: p.special_instructions || undefined,
+            })),
+          },
+        });
+      }
+
+      return {
+        order: updatedOrder,
+        newItems: preparedItems,
+        invoice: existingInvoice,
+        kot: generatedKot,
+        transactionId: (updatedOrder as any).transaction_id || updatedOrder.id,
       };
     });
   }

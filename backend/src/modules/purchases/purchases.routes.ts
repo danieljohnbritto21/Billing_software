@@ -164,7 +164,11 @@ adminPurchaseInvoicesRouter.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const result = await purchasesService.createPurchaseInvoice(req.user!.businessId, req.body);
-      return apiSuccess(res, result, 'Purchase invoice created successfully', 201);
+      const statusCode = result.isDuplicate ? 200 : 201;
+      const msg = result.isDuplicate
+        ? 'Purchase invoice already exists. Existing invoice returned.'
+        : 'Purchase invoice created successfully';
+      return apiSuccess(res, result, msg, statusCode);
     } catch (err) {
       next(err);
     }
@@ -330,7 +334,11 @@ supplierPurchasesRouter.post(
         req.body,
         req.user!.supplierId!
       );
-      return apiSuccess(res, result, 'Invoice submitted successfully. Awaiting verification.', 201);
+      const statusCode = result.isDuplicate ? 200 : 201;
+      const msg = result.isDuplicate
+        ? 'Invoice already submitted. Existing invoice returned.'
+        : 'Invoice submitted successfully. Awaiting verification.';
+      return apiSuccess(res, result, msg, statusCode);
     } catch (err) {
       next(err);
     }

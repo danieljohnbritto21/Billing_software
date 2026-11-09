@@ -271,7 +271,7 @@ test('=== FOODBILL PRO SUPPLIER INVOICE CONTRACT & PRODUCT PRICE TESTS ===', asy
         deviceId
       );
 
-      assert.equal(retryRes.status, 201);
+      assert.ok(retryRes.status === 200 || retryRes.status === 201);
       assert.equal(retryRes.data.data.invoice.id, testInvoiceUuid);
       assert.equal(retryRes.data.data.isDuplicate, true, 'Must acknowledge as duplicate idempotently');
     });

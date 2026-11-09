@@ -15,6 +15,7 @@ export const orderItemInputSchema = z.object({
 
 export const createOrderSchema = z.object({
   id: z.string().uuid().optional(),
+  transactionId: z.string().uuid().optional(),
   orderNumber: z.string().max(60).optional(),
   diningTableId: z.string().uuid().optional(),
   orderType: z.string().max(40).default('Dine In'),
@@ -34,6 +35,12 @@ export const updateOrderSchema = z.object({
   diningTableId: z.string().uuid().nullable().optional(),
 });
 
+export const addOrderItemsSchema = z.object({
+  items: z.array(orderItemInputSchema).min(1),
+  generateKot: z.boolean().default(true),
+  notes: z.string().optional(),
+});
+
 export const recordOrderPaymentSchema = z.object({
   amountPaise: z.number().int().positive(),
   paymentMethod: z.string().max(40).default('Cash'),
@@ -45,4 +52,5 @@ export const recordOrderPaymentSchema = z.object({
 export type OrderItemInput = z.infer<typeof orderItemInputSchema>;
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;
+export type AddOrderItemsInput = z.infer<typeof addOrderItemsSchema>;
 export type RecordOrderPaymentInput = z.infer<typeof recordOrderPaymentSchema>;

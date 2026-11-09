@@ -19,6 +19,10 @@ import {
   adminSupplierPaymentsRouter,
   supplierPurchasesRouter,
 } from '../modules/purchases/purchases.routes';
+import {
+  adminTransactionsRouter,
+  supplierTransactionsRouter,
+} from '../modules/transactions/transactions.routes';
 
 export const apiRouter = Router();
 
@@ -42,6 +46,7 @@ apiRouter.use('/admin/categories', adminCategoriesRouter);
 apiRouter.use('/admin/products', adminProductsRouter);
 apiRouter.use('/admin/orders', adminOrdersRouter);
 apiRouter.use('/admin/invoices', adminInvoicesRouter);
+apiRouter.use('/admin/transactions', adminTransactionsRouter);
 apiRouter.use('/admin/purchase-orders', adminPurchaseOrdersRouter);
 apiRouter.use('/admin/purchase-invoices', adminPurchaseInvoicesRouter);
 apiRouter.use('/admin/supplier-payments', adminSupplierPaymentsRouter);
@@ -50,4 +55,5 @@ apiRouter.use('/admin/supplier-payments', adminSupplierPaymentsRouter);
 apiRouter.use('/supplier/profile', supplierProfileRouter);
 apiRouter.use('/supplier/categories', supplierCategoriesRouter);
 apiRouter.use('/supplier/products', supplierProductsRouter);
+apiRouter.use('/supplier/transactions', supplierTransactionsRouter);
 apiRouter.use('/supplier', supplierPurchasesRouter);

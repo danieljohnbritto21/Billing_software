@@ -9,6 +9,7 @@ import {
   createOrderSchema,
   updateOrderSchema,
   recordOrderPaymentSchema,
+  addOrderItemsSchema,
 } from './orders.schema';
 import { ordersService } from './orders.service';
 import { invoicesService } from '../invoices/invoices.service';
@@ -66,6 +67,23 @@ adminOrdersRouter.put(
         req.body
       );
       return apiSuccess(res, result, 'Order updated successfully');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+adminOrdersRouter.post(
+  '/:id/items',
+  validateBody(addOrderItemsSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await ordersService.addOrderItems(
+        req.user!.businessId,
+        req.params.id,
+        req.body
+      );
+      return apiSuccess(res, result, 'Items added to order and incremental KOT generated', 201);
     } catch (err) {
       next(err);
     }

@@ -7,13 +7,15 @@ import { apiSuccess } from '../../utils/response';
 
 export const kotRouter = Router();
 
+kotRouter.use(requireAuth, requireRole('ADMIN'));
+
 kotRouter.get(
   '/',
-  requireAuth,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const invoiceId = req.query.invoiceId as string | undefined;
-      const kots = await kotService.listKot(req.user!.businessId, invoiceId);
+      const orderId = req.query.orderId as string | undefined;
+      const kots = await kotService.listKot(req.user!.businessId, { invoiceId, orderId });
       return apiSuccess(res, kots);
     } catch (err) {
       next(err);

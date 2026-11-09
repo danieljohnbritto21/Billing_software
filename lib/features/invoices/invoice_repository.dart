@@ -176,6 +176,7 @@ class InvoiceRepository {
           idempotencyKey: invoiceId,
           payload: {
             'id': invoiceId,
+            'orderId': createdInv.orderId,
             'idempotencyKey': invoiceId,
             'deviceId': createdInv.deviceId,
             'invoiceNumber': createdInv.invoiceNumber,
