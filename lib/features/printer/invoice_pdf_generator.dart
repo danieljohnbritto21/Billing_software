@@ -4,9 +4,11 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/database/app_database.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../invoices/invoice_repository.dart';
 import '../settings/settings_repository.dart';
+import './procurement_pdf_generator.dart';
 
 enum ReceiptFormat {
   thermal58mm,
@@ -993,6 +995,232 @@ class InvoicePdfGenerator {
     await Printing.sharePdf(
       bytes: pdfBytes,
       filename: 'KOT_${details.invoice.invoiceNumber}.pdf',
+    );
+  }
+
+  /// Generates a Kitchen Order Ticket (KOT) for a purchase invoice / submitted bill
+  static Future<Uint8List> generatePurchaseKot({
+    required PurchaseInvoiceEntry invoice,
+    required List<PurchaseInvoiceItemEntry> items,
+    required Map<String, String> settings,
+    ReceiptFormat? format,
+  }) async {
+    final effectiveFormat = resolveFormat(settings, format);
+    final theme = await _loadTheme();
+    final pdf = pw.Document(theme: theme);
+
+    final businessName = settings['business_name']?.trim().isNotEmpty == true
+        ? settings['business_name']!.trim()
+        : 'FoodBill Pro';
+    final dateFormat = DateFormat('dd-MM-yyyy hh:mm a');
+    final formattedDate = dateFormat.format(invoice.createdAt);
+
+    final kotNumber = 'KOT-${invoice.invoiceNumber.replaceAll(RegExp(r'[^0-9]'), '').padLeft(6, '0')}';
+
+    final is58mm = effectiveFormat == ReceiptFormat.thermal58mm;
+    final pageFormat = is58mm
+        ? const PdfPageFormat(58 * PdfPageFormat.mm, double.infinity, marginAll: 3 * PdfPageFormat.mm)
+        : const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm);
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: pageFormat,
+        build: (context) {
+          return _buildPurchaseThermalKot(
+            invoice: invoice,
+            items: items,
+            businessName: businessName,
+            kotNumber: kotNumber,
+            formattedDate: formattedDate,
+            is58mm: is58mm,
+          );
+        },
+      ),
+    );
+
+    return await pdf.save();
+  }
+
+  /// Print KOT for a purchase invoice / submitted bill
+  static Future<void> printPurchaseKot({
+    required PurchaseInvoiceEntry invoice,
+    required List<PurchaseInvoiceItemEntry> items,
+    required Map<String, String> settings,
+    ReceiptFormat? format,
+  }) async {
+    final effectiveFormat = resolveFormat(settings, format);
+    final pdfBytes = await generatePurchaseKot(
+      invoice: invoice,
+      items: items,
+      settings: settings,
+      format: effectiveFormat,
+    );
+    await Printing.layoutPdf(
+      onLayout: (pageFormat) async => pdfBytes,
+      name: 'KOT_${invoice.invoiceNumber}.pdf',
+    );
+  }
+
+  /// Print Purchase Invoice / Submitted Bill
+  static Future<void> printPurchaseInvoice({
+    required PurchaseInvoiceEntry invoice,
+    required List<PurchaseInvoiceItemEntry> items,
+    SupplierEntry? supplier,
+    required Map<String, String> settings,
+  }) async {
+    final supp = supplier ??
+        SupplierEntry(
+          id: invoice.supplierId,
+          businessId: invoice.businessId,
+          name: 'Supplier Partner',
+          isActive: true,
+          isVerified: true,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+    final pdfBytes = await ProcurementPdfGenerator.generatePurchaseInvoicePdf(
+      invoice: invoice,
+      items: items,
+      supplier: supp,
+      settings: settings,
+    );
+    await Printing.layoutPdf(
+      onLayout: (pageFormat) async => pdfBytes,
+      name: '${invoice.invoiceNumber}.pdf',
+    );
+  }
+
+  /// Share Purchase Invoice / Submitted Bill via WhatsApp / Email / PDF
+  static Future<void> sharePurchaseInvoice({
+    required PurchaseInvoiceEntry invoice,
+    required List<PurchaseInvoiceItemEntry> items,
+    SupplierEntry? supplier,
+    required Map<String, String> settings,
+  }) async {
+    final supp = supplier ??
+        SupplierEntry(
+          id: invoice.supplierId,
+          businessId: invoice.businessId,
+          name: 'Supplier Partner',
+          isActive: true,
+          isVerified: true,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+    final pdfBytes = await ProcurementPdfGenerator.generatePurchaseInvoicePdf(
+      invoice: invoice,
+      items: items,
+      supplier: supp,
+      settings: settings,
+    );
+    await Printing.sharePdf(
+      bytes: pdfBytes,
+      filename: '${invoice.invoiceNumber}.pdf',
+    );
+  }
+
+  static pw.Widget _buildPurchaseThermalKot({
+    required PurchaseInvoiceEntry invoice,
+    required List<PurchaseInvoiceItemEntry> items,
+    required String businessName,
+    required String kotNumber,
+    required String formattedDate,
+    required bool is58mm,
+  }) {
+    final titleSize = is58mm ? 12.0 : 15.0;
+    final headerSize = is58mm ? 9.5 : 11.5;
+    final textSize = is58mm ? 8.5 : 10.0;
+    final itemSize = is58mm ? 9.0 : 11.0;
+    final qtySize = is58mm ? 10.0 : 12.0;
+    final smallSize = is58mm ? 7.5 : 8.5;
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        pw.Text(
+          businessName.toUpperCase(),
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(fontSize: titleSize, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 2),
+        pw.Text(
+          'KITCHEN ORDER TICKET (KOT)',
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(fontSize: headerSize, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 4),
+        pw.Divider(thickness: 0.5, borderStyle: pw.BorderStyle.dashed, color: PdfColors.black),
+        pw.SizedBox(height: 2),
+        pw.Align(
+          alignment: pw.Alignment.centerLeft,
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('KOT No: $kotNumber', style: pw.TextStyle(fontSize: textSize, fontWeight: pw.FontWeight.bold)),
+                  pw.Text('Order No: ${invoice.invoiceNumber}', style: pw.TextStyle(fontSize: textSize)),
+                ],
+              ),
+              pw.SizedBox(height: 2),
+              pw.Text('Date: $formattedDate', style: pw.TextStyle(fontSize: smallSize)),
+            ],
+          ),
+        ),
+        pw.SizedBox(height: 3),
+        pw.Divider(thickness: 0.5, borderStyle: pw.BorderStyle.dashed, color: PdfColors.black),
+        pw.Table(
+          columnWidths: {
+            0: const pw.FlexColumnWidth(7.0),
+            1: const pw.FlexColumnWidth(3.0),
+          },
+          children: [
+            pw.TableRow(
+              children: [
+                pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(vertical: 2),
+                  child: pw.Text('ITEM', style: pw.TextStyle(fontSize: headerSize, fontWeight: pw.FontWeight.bold)),
+                ),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(vertical: 2),
+                  child: pw.Text('QTY', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: headerSize, fontWeight: pw.FontWeight.bold)),
+                ),
+              ],
+            ),
+            ...items.map((item) {
+              final qtyStr = item.quantity % 1 == 0
+                  ? item.quantity.toInt().toString()
+                  : item.quantity.toString();
+              final unitLabel = (item.unit.isNotEmpty && item.unit.toLowerCase() != 'plate')
+                  ? ' (${item.unit})'
+                  : '';
+
+              return pw.TableRow(
+                children: [
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.symmetric(vertical: 2.5),
+                    child: pw.Text(
+                      '${item.productName}$unitLabel',
+                      style: pw.TextStyle(fontSize: itemSize, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.symmetric(vertical: 2.5),
+                    child: pw.Text(
+                      qtyStr,
+                      textAlign: pw.TextAlign.right,
+                      style: pw.TextStyle(fontSize: qtySize, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ],
+        ),
+        pw.Divider(thickness: 0.5, borderStyle: pw.BorderStyle.dashed, color: PdfColors.black),
+        pw.SizedBox(height: 8),
+      ],
     );
   }
 }

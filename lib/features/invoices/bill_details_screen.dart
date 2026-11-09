@@ -271,31 +271,63 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen> {
             onPressed: () => _sharePdf(context),
           ),
           IconButton(
+            icon: const Icon(Icons.restaurant_menu),
+            tooltip: 'Print KOT (Kitchen Ticket)',
+            onPressed: () => _printKot(context),
+          ),
+          IconButton(
             icon: const Icon(Icons.print_outlined),
-            tooltip: 'Print',
+            tooltip: 'Print Receipt',
             onPressed: () => _printBill(context),
           ),
         ],
       ),
       bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
           child: Row(
             children: [
+              IconButton.filledTonal(
+                icon: const Icon(Icons.share),
+                tooltip: 'Share PDF',
+                onPressed: () => _sharePdf(context),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
-                  icon: const Icon(Icons.share),
-                  label: const Text('Share PDF'),
-                  onPressed: () => _sharePdf(context),
+                  icon: const Icon(Icons.restaurant_menu, color: Colors.deepOrange),
+                  label: const Text(
+                    'Print KOT',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.deepOrange, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () => _printKot(context),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
-                flex: 2,
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.print),
                   label: const Text('Print Receipt',
                       style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                   onPressed: () => _printBill(context),
                 ),
               ),
@@ -1046,6 +1078,26 @@ class _BillDetailsScreenState extends ConsumerState<BillDetailsScreen> {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error printing: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _printKot(BuildContext context) async {
+    try {
+      final invoiceRepo = ref.read(invoiceRepositoryProvider);
+      final details = await invoiceRepo.getInvoiceWithDetails(widget.invoiceId);
+      if (details == null) return;
+
+      final settings = await ref.read(settingsRepositoryProvider).getAllSettings();
+      await InvoicePdfGenerator.printKot(
+        details: details,
+        settings: settings,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error printing KOT: $e'), backgroundColor: Colors.red),
         );
       }
     }
