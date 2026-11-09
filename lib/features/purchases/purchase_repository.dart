@@ -825,6 +825,7 @@ class PurchaseRepository {
         KotRecordsCompanion.insert(
           id: kotId,
           businessId: Value(bizId),
+          invoiceId: Value(invoice.id),
           purchaseInvoiceId: Value(invoice.id),
           supplierInvoiceNumber: Value(invoice.invoiceNumber),
           kotNumber: kotNumber,

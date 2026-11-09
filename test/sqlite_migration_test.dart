@@ -244,5 +244,74 @@ void main() {
       expect(inv.paidAmountPaise, 10500);
       expect(inv.orderId, 'order-hist-01');
     });
+
+    test('KOT can be saved for Purchase Invoice with purchaseInvoiceId and safe invoiceId', () async {
+      final now = DateTime.now();
+
+      // Insert supplier
+      await db.into(db.suppliers).insert(
+        SuppliersCompanion.insert(
+          id: 'supp-02',
+          businessId: 'biz-01',
+          name: 'Fresh Dairy Supplies',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      // Insert purchase invoice
+      await db.into(db.purchaseInvoices).insert(
+        PurchaseInvoicesCompanion.insert(
+          id: 'pi-kot-01',
+          businessId: 'biz-01',
+          supplierId: 'supp-02',
+          invoiceNumber: 'INV-589546',
+          subtotalPaise: 10000,
+          grandTotalPaise: 10000,
+          balanceDuePaise: const drift.Value(10000),
+          verificationStatus: const drift.Value('SUBMITTED'),
+          invoiceDate: now,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      // Insert KOT for this purchase invoice with safe invoiceId
+      await db.into(db.kotRecords).insert(
+        KotRecordsCompanion.insert(
+          id: 'kot-pi-01',
+          businessId: const drift.Value('biz-01'),
+          invoiceId: const drift.Value('pi-kot-01'),
+          purchaseInvoiceId: const drift.Value('pi-kot-01'),
+          supplierInvoiceNumber: const drift.Value('INV-589546'),
+          kotNumber: 'KOT-0001',
+          orderType: 'Procurement',
+          itemsJson: '[]',
+          createdAt: now,
+        ),
+      );
+
+      final kotRec = await (db.select(db.kotRecords)..where((k) => k.id.equals('kot-pi-01'))).getSingle();
+      expect(kotRec.purchaseInvoiceId, 'pi-kot-01');
+      expect(kotRec.supplierInvoiceNumber, 'INV-589546');
+      expect(kotRec.invoiceId, 'pi-kot-01');
+
+      // Also verify KotItem insert
+      await db.into(db.kotItems).insert(
+        KotItemsCompanion.insert(
+          id: 'ki-01',
+          kotId: 'kot-pi-01',
+          productNameSnapshot: 'Briyaniiiiiuu',
+          quantity: 1.0,
+          unit: const drift.Value('pcs'),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      final kotItem = await (db.select(db.kotItems)..where((ki) => ki.id.equals('ki-01'))).getSingle();
+      expect(kotItem.productNameSnapshot, 'Briyaniiiiiuu');
+      expect(kotItem.quantity, 1.0);
+    });
   });
 }

@@ -150,6 +150,63 @@ class AppDatabase extends _$AppDatabase {
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
+
+          // Ensure kot_records.invoice_id is nullable on existing SQLite databases
+          try {
+            final tableInfo = await customSelect('PRAGMA table_info(kot_records)').get();
+            final invoiceIdCol = tableInfo.cast<dynamic>().firstWhere(
+              (row) => row.data['name'] == 'invoice_id',
+              orElse: () => null,
+            );
+            if (invoiceIdCol != null && invoiceIdCol.data['notnull'] == 1) {
+              await customStatement('PRAGMA foreign_keys = OFF');
+              await customStatement('''
+                CREATE TABLE IF NOT EXISTS kot_records_temp_fix (
+                  id TEXT NOT NULL PRIMARY KEY,
+                  business_id TEXT,
+                  invoice_id TEXT,
+                  purchase_invoice_id TEXT,
+                  supplier_invoice_number TEXT,
+                  kot_number TEXT NOT NULL,
+                  order_type TEXT NOT NULL,
+                  table_number TEXT,
+                  items_json TEXT NOT NULL,
+                  reprint_count INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL,
+                  server_version INTEGER,
+                  sync_status TEXT DEFAULT 'synced'
+                )
+              ''');
+              final colNames = tableInfo.map((r) => r.data['name'] as String).toSet();
+              final colsToSelect = [
+                'id',
+                'kot_number',
+                'order_type',
+                'table_number',
+                'items_json',
+                'reprint_count',
+                'created_at',
+                if (colNames.contains('business_id')) 'business_id' else 'NULL AS business_id',
+                if (colNames.contains('invoice_id')) 'invoice_id' else 'NULL AS invoice_id',
+                if (colNames.contains('purchase_invoice_id')) 'purchase_invoice_id' else 'NULL AS purchase_invoice_id',
+                if (colNames.contains('supplier_invoice_number')) 'supplier_invoice_number' else 'NULL AS supplier_invoice_number',
+                if (colNames.contains('server_version')) 'server_version' else 'NULL AS server_version',
+                if (colNames.contains('sync_status')) 'sync_status' else "'synced' AS sync_status",
+              ].join(', ');
+
+              await customStatement('''
+                INSERT INTO kot_records_temp_fix (
+                  id, kot_number, order_type, table_number, items_json, reprint_count, created_at,
+                  business_id, invoice_id, purchase_invoice_id, supplier_invoice_number,
+                  server_version, sync_status
+                )
+                SELECT $colsToSelect FROM kot_records
+              ''');
+              await customStatement('DROP TABLE kot_records');
+              await customStatement('ALTER TABLE kot_records_temp_fix RENAME TO kot_records');
+              await customStatement('PRAGMA foreign_keys = ON');
+            }
+          } catch (_) {}
         },
       );
 }

@@ -709,11 +709,12 @@ class SyncService extends ChangeNotifier {
 
       case 'kot_records':
         if (!isDelete && d != null) {
+          final fallbackInvId = d['invoice_id'] ?? d['invoiceId'] ?? d['purchase_invoice_id'] ?? d['purchaseInvoiceId'] ?? recordId;
           await _db.into(_db.kotRecords).insertOnConflictUpdate(
             KotRecordsCompanion.insert(
               id: recordId,
               businessId: drift.Value(d['business_id'] ?? d['businessId']),
-              invoiceId: drift.Value(d['invoice_id'] ?? d['invoiceId']),
+              invoiceId: drift.Value(fallbackInvId),
               purchaseInvoiceId: drift.Value(d['purchase_invoice_id'] ?? d['purchaseInvoiceId']),
               supplierInvoiceNumber: drift.Value(d['supplier_invoice_number'] ?? d['supplierInvoiceNumber']),
               kotNumber: d['kot_number'] ?? d['kotNumber'] ?? 'KOT-01',
