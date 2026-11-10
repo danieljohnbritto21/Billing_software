@@ -858,6 +858,34 @@ export class SyncService {
             }
             break;
           }
+          case 'kot_items': {
+            const p = item.payload;
+            if (item.operation === 'INSERT' || item.operation === 'UPDATE') {
+              await prisma.kot_items.upsert({
+                where: { id: item.recordId },
+                create: {
+                  id: item.recordId,
+                  kot_id: p.kotId || p.kot_id,
+                  product_id: p.productId || p.product_id || null,
+                  order_item_id: p.orderItemId || p.order_item_id || null,
+                  product_name_snapshot: p.productNameSnapshot || p.product_name_snapshot || p.productName || 'Item',
+                  quantity: p.quantity,
+                  unit: p.unit || 'unit',
+                  special_instructions: p.specialInstructions || p.special_instructions || null,
+                  item_status: p.itemStatus || p.item_status || 'PENDING',
+                },
+                update: {
+                  product_name_snapshot: p.productNameSnapshot || p.product_name_snapshot || p.productName || 'Item',
+                  quantity: p.quantity,
+                  unit: p.unit || 'unit',
+                  special_instructions: p.specialInstructions || p.special_instructions || null,
+                  item_status: p.itemStatus || p.item_status || 'PENDING',
+                },
+              });
+              results.push({ recordId: item.recordId, status: 'synced', entity: 'kot_items' });
+            }
+            break;
+          }
           default:
             results.push({ recordId: item.recordId, status: 'ignored_unsupported' });
             break;

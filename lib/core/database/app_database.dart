@@ -3,6 +3,8 @@ import 'package:drift/drift.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'tables.dart';
+export 'tables.dart';
+export 'package:drift/drift.dart' show Value;
 
 import 'app_database_connection_native.dart'
     if (dart.library.js_interop) 'app_database_connection_web.dart';

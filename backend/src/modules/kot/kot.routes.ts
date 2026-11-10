@@ -60,7 +60,7 @@ kotRouter.post(
   validateBody(createKotSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const kot = await kotService.createKot(req.user!.businessId, req.body);
+      const kot = await kotService.createKot(req.user!.businessId, req.body, req.user?.supplierId);
       return apiSuccess(res, kot, 'KOT generated successfully', 201);
     } catch (err) {
       next(err);

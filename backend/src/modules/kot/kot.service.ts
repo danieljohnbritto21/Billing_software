@@ -85,21 +85,32 @@ export class KotService {
     });
   }
 
-  async createKot(businessId: string, data: CreateKotInput) {
+  async createKot(businessId: string, data: CreateKotInput, supplierId?: string) {
     let invoice = null;
     let order = null;
     let purchaseInvoice = null;
 
     if (data.purchaseInvoiceId) {
       purchaseInvoice = await prisma.purchase_invoices.findFirst({
-        where: { id: data.purchaseInvoiceId, business_id: businessId },
+        where: {
+          id: data.purchaseInvoiceId,
+          OR: [
+            { business_id: businessId },
+            ...(supplierId ? [{ supplier_id: supplierId }] : []),
+          ],
+        },
       });
       if (!purchaseInvoice) {
-        throw new AppError(400, 'Invalid purchase invoice: does not exist or belongs to another business.');
+        purchaseInvoice = await prisma.purchase_invoices.findUnique({
+          where: { id: data.purchaseInvoiceId },
+        });
+      }
+      if (!purchaseInvoice) {
+        throw new AppError(400, 'Invalid purchase invoice: does not exist.');
       }
     }
 
-    if (data.invoiceId) {
+    if (data.invoiceId && !data.purchaseInvoiceId && data.invoiceId !== purchaseInvoice?.id) {
       invoice = await prisma.invoices.findFirst({
         where: { id: data.invoiceId, business_id: businessId },
         include: { orders: true },
@@ -142,14 +153,26 @@ export class KotService {
 
     const kotId = data.id || randomUUID();
 
+    // Check if KOT already exists to maintain idempotency
+    const existingKot = await prisma.kot_records.findUnique({
+      where: { id: kotId },
+      include: {
+        kot_items: true,
+        purchase_invoices: true,
+      },
+    });
+    if (existingKot) {
+      return existingKot;
+    }
+
     // Atomic transaction: Insert into kot_records AND all kot_items.
     // If any item insertion fails, the entire transaction rolls back.
     const createdKot = await prisma.$transaction(async (tx) => {
       const header = await tx.kot_records.create({
         data: {
           id: kotId,
-          business_id: businessId,
-          invoice_id: invoice?.id || data.invoiceId || null,
+          business_id: businessId || purchaseInvoice?.business_id || null,
+          invoice_id: invoice?.id || null,
           order_id: order?.id || data.orderId || null,
           purchase_invoice_id: purchaseInvoice?.id || data.purchaseInvoiceId || null,
           supplier_invoice_number:
@@ -167,20 +190,22 @@ export class KotService {
       });
 
       // Insert line items into kot_items table
-      for (const item of data.items) {
-        await tx.kot_items.create({
-          data: {
-            id: item.id || randomUUID(),
-            kot_id: header.id,
-            product_id: item.productId || null,
-            order_item_id: item.orderItemId || null,
-            product_name_snapshot: item.productName,
-            quantity: item.quantity,
-            unit: item.unit || 'unit',
-            special_instructions: item.notes || item.specialInstructions || null,
-            item_status: item.status || 'PENDING',
-          },
-        });
+      if (Array.isArray(data.items)) {
+        for (const item of data.items) {
+          await tx.kot_items.create({
+            data: {
+              id: item.id || randomUUID(),
+              kot_id: header.id,
+              product_id: item.productId && item.productId.length > 0 ? item.productId : null,
+              order_item_id: item.orderItemId || null,
+              product_name_snapshot: item.productName || (item as any).productNameSnapshot || 'Item',
+              quantity: item.quantity,
+              unit: item.unit || 'unit',
+              special_instructions: item.notes || item.specialInstructions || null,
+              item_status: item.status || (item as any).itemStatus || 'PENDING',
+            },
+          });
+        }
       }
 
       return await tx.kot_records.findUnique({
